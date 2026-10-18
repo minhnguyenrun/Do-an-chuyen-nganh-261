@@ -1,7 +1,7 @@
 """Parser utility to extract and standardize layout bounding boxes from Chandra OCR outputs.
 
 Supports structured JSON blocks, HTML tags with data-bbox attributes,
-and converts coordinates to DocLayNet standard [x, y, w, h] format.
+and converts coordinates to DocLayNet/PubLayNet standard [x, y, w, h] format.
 """
 
 import json
@@ -20,6 +20,28 @@ DOCLAYNET_CATEGORIES = {
     "Table": 9,
     "Text": 10,
     "Title": 11,
+}
+
+PUBLAYNET_CATEGORIES = {
+    "Text": 1,
+    "Title": 2,
+    "List": 3,
+    "Table": 4,
+    "Figure": 5,
+}
+
+DOCLAYNET_TO_PUBLAYNET = {
+    "Text": (1, "Text"),
+    "Footnote": (1, "Text"),
+    "Page-header": (1, "Text"),
+    "Page-footer": (1, "Text"),
+    "Formula": (1, "Text"),
+    "Title": (2, "Title"),
+    "Section-header": (2, "Title"),
+    "List-item": (3, "List"),
+    "Table": (4, "Table"),
+    "Picture": (5, "Figure"),
+    "Caption": (5, "Figure"),
 }
 
 # Mapping Chandra block types to DocLayNet 11 categories
@@ -98,39 +120,38 @@ def parse_bbox_values(val: Any) -> Optional[List[float]]:
 
 
 def parse_html_bboxes(raw_text: str) -> List[Dict[str, Any]]:
-    """Extracts elements marked with data-bbox or class attributes from HTML output."""
-    items = []
-    # Match patterns like <tag ... data-bbox="10, 20, 100, 200" ... data-type="Section-header" ...>
+    """Extracts bounding boxes and types from Chandra HTML-like markup."""
+    results = []
+    # Match tags with data-bbox="[x1, y1, x2, y2]" or bbox="x1,y1,x2,y2"
     tag_matches = re.findall(
-        r'<[^>]*?(?:data-bbox|bbox)=["\']([^"\']+)["\'][^>]*?>',
+        r'<([a-zA-Z0-9_\-]+)\s+[^>]*?(?:data-bbox|bbox)=["\']([^"\']+)["\'][^>]*?>',
         raw_text,
-        re.IGNORECASE,
     )
-    if tag_matches:
-        for bbox_str in tag_matches:
-            coords = parse_bbox_values(bbox_str)
-            if coords:
-                items.append({"bbox": coords, "type": "Text"})
+    for tag_name, bbox_str in tag_matches:
+        coords = parse_bbox_values(bbox_str)
+        if coords:
+            results.append({"type": tag_name, "bbox": coords})
 
-    # More specific search: class and data-bbox
-    block_matches = re.findall(
-        r'<([a-zA-Z0-9]+)\s+[^>]*?class=["\']([^"\']+)["\'][^>]*?data-bbox=["\']([^"\']+)["\'][^>]*?>',
+    # Match self-closing elements <box type="..." bbox="..."/>
+    box_matches = re.findall(
+        r'<box\s+[^>]*?(?:type|class)=["\']([^"\']+)["\'][^>]*?bbox=["\']([^"\']+)["\'][^>]*?/?>',
         raw_text,
-        re.IGNORECASE,
     )
-    if block_matches:
-        for _, class_str, bbox_str in block_matches:
-            coords = parse_bbox_values(bbox_str)
-            if coords:
-                # Find matching category from class
-                matched_cat = "Text"
-                for cls in class_str.split():
-                    cls_clean = cls.strip().lower()
-                    if cls_clean in CHANDRA_NORM_MAP:
-                        matched_cat = CHANDRA_NORM_MAP[cls_clean]
-                        break
-                items.append({"bbox": coords, "type": matched_cat})
-    return items
+    for b_type, bbox_str in box_matches:
+        coords = parse_bbox_values(bbox_str)
+        if coords:
+            results.append({"type": b_type, "bbox": coords})
+
+    return results
+
+
+def clean_json_markdown(text: str) -> str:
+    """Strips markdown code blocks to expose pure JSON content."""
+    text = text.strip()
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+    if match:
+        text = match.group(1).strip()
+    return text
 
 
 def parse_chandra_layout_response(
@@ -138,45 +159,31 @@ def parse_chandra_layout_response(
     img_width: int,
     img_height: int,
     default_score: float = 0.95,
+    dataset: str = "doclaynet",
 ) -> List[Dict[str, Any]]:
     """Parses raw text output from Chandra model into standard detection schema."""
-    text = raw_response.strip()
+    if not raw_response or not raw_response.strip():
+        return []
 
-    # 1. Try JSON block extraction
-    data = None
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
-    candidate_json = json_match.group(1).strip() if json_match else text
-
-    # Try brackets
-    start_bracket = candidate_json.find("[")
-    end_bracket = candidate_json.rfind("]")
-    if start_bracket != -1 and end_bracket > start_bracket:
-        try:
-            data = json.loads(candidate_json[start_bracket : end_bracket + 1])
-        except Exception:
-            pass
-
-    if data is None:
-        start_brace = candidate_json.find("{")
-        end_brace = candidate_json.rfind("}")
-        if start_brace != -1 and end_brace > start_brace:
-            try:
-                data = json.loads(candidate_json[start_brace : end_brace + 1])
-            except Exception:
-                pass
-
+    text = clean_json_markdown(raw_response)
     raw_items = []
-    if isinstance(data, list):
-        raw_items = data
-    elif isinstance(data, dict):
-        for key in ["blocks", "layout", "elements", "chunks", "regions"]:
-            if key in data and isinstance(data[key], list):
-                raw_items = data[key]
-                break
-        if not raw_items:
-            raw_items = [data]
 
-    # 2. If JSON parsing found nothing, inspect HTML tags
+    # 1. Attempt JSON parsing
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            for key in ["layout", "blocks", "elements", "predictions", "regions"]:
+                if key in data and isinstance(data[key], list):
+                    raw_items = data[key]
+                    break
+            if not raw_items and "bbox" in data:
+                raw_items = [data]
+        elif isinstance(data, list):
+            raw_items = data
+    except json.JSONDecodeError:
+        pass
+
+    # 2. If JSON parsing failed, try extracting HTML style bboxes
     if not raw_items:
         raw_items = parse_html_bboxes(raw_response)
 
@@ -200,6 +207,8 @@ def parse_chandra_layout_response(
             if coords:
                 raw_items.append({"bbox": coords, "type": type_str})
 
+    is_publaynet = dataset.lower() == "publaynet"
+
     # Standardize and filter detections
     detections = []
     for item in raw_items:
@@ -213,7 +222,15 @@ def parse_chandra_layout_response(
         if norm_cat not in DOCLAYNET_CATEGORIES:
             continue
 
-        cat_id = DOCLAYNET_CATEGORIES[norm_cat]
+        if is_publaynet:
+            cat_info = DOCLAYNET_TO_PUBLAYNET.get(norm_cat)
+            if not cat_info:
+                continue
+            cat_id, cat_name = cat_info
+        else:
+            cat_id = DOCLAYNET_CATEGORIES[norm_cat]
+            cat_name = norm_cat
+
         raw_bbox = item.get("bbox") or item.get("box") or item.get("polygon")
         coords = parse_bbox_values(raw_bbox)
         if not coords:
@@ -251,7 +268,7 @@ def parse_chandra_layout_response(
         detections.append(
             {
                 "category_id": cat_id,
-                "category_name": norm_cat,
+                "category_name": cat_name,
                 "bbox": [round(bx, 2), round(by, 2), round(bw, 2), round(bh, 2)],
                 "score": round(score, 4),
             }

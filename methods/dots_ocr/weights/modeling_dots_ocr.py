@@ -34,7 +34,7 @@ class DotsOCRForCausalLM(Qwen2ForCausalLM):
     ) -> torch.Tensor:
         inputs_embeds = self.get_input_embeddings()(input_ids)
 
-        if pixel_values is not None and img_mask is not None and img_mask.any():
+        if pixel_values is not None:
             assert img_mask is not None
             if grid_thw.shape[0] > DOTS_VLM_MAX_IMAGES:
                 print(
@@ -44,8 +44,6 @@ class DotsOCRForCausalLM(Qwen2ForCausalLM):
             vision_embeddings = self.vision_tower(pixel_values, grid_thw)
 
             true_indices = torch.nonzero(img_mask).squeeze()
-            if len(true_indices.shape) == 1:
-                true_indices = true_indices.unsqueeze(0)
             if len(true_indices) > vision_embeddings.size(0):
                 print(
                     f"img_mask sum > VE and will be truncated, mask.sum()={len(true_indices)} {vision_embeddings.size(0)=}"
@@ -127,11 +125,7 @@ class DotsOCRForCausalLM(Qwen2ForCausalLM):
             **kwargs,
         )
 
-        if past_key_values is None or (cache_position is not None and cache_position[0] == 0):
+        if cache_position[0] == 0:
             model_inputs["pixel_values"] = pixel_values
-            model_inputs["image_grid_thw"] = kwargs.get("image_grid_thw", None)
-        else:
-            model_inputs["pixel_values"] = None
-            model_inputs["image_grid_thw"] = None
 
         return model_inputs

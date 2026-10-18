@@ -2,9 +2,22 @@
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 from PIL import Image
+
+# Fix Windows console UTF-8 encoding
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Import torch first on Windows to avoid DLL conflicts (WinError 127 shm.dll) with modelscope/torch
 try:

@@ -18,6 +18,28 @@ DOCLAYNET_CATEGORIES = {
     "Title": 11,
 }
 
+PUBLAYNET_CATEGORIES = {
+    "Text": 1,
+    "Title": 2,
+    "List": 3,
+    "Table": 4,
+    "Figure": 5,
+}
+
+DOCLAYNET_TO_PUBLAYNET = {
+    "Text": (1, "Text"),
+    "Footnote": (1, "Text"),
+    "Page-header": (1, "Text"),
+    "Page-footer": (1, "Text"),
+    "Formula": (1, "Text"),
+    "Title": (2, "Title"),
+    "Section-header": (2, "Title"),
+    "List-item": (3, "List"),
+    "Table": (4, "Table"),
+    "Picture": (5, "Figure"),
+    "Caption": (5, "Figure"),
+}
+
 NORM_MAP = {
     "caption": "Caption",
     "footnote": "Footnote",
@@ -35,6 +57,7 @@ NORM_MAP = {
     "picture": "Picture",
     "image": "Picture",
     "figure": "Picture",
+    "diagram": "Picture",
     "section-header": "Section-header",
     "section_header": "Section-header",
     "paragraph_title": "Section-header",
@@ -74,6 +97,7 @@ def parse_dots_layout_response(
     img_width: int,
     img_height: int,
     default_score: float = 0.95,
+    dataset: str = "doclaynet",
 ) -> List[Dict[str, Any]]:
     """Parses raw text output from dots.ocr model into standard detection schema."""
     cleaned = clean_json_string(raw_response)
@@ -116,6 +140,8 @@ def parse_dots_layout_response(
     if not isinstance(data, list):
         return []
 
+    is_publaynet = dataset.lower() == "publaynet"
+
     detections = []
     for item in data:
         if not isinstance(item, dict):
@@ -126,7 +152,15 @@ def parse_dots_layout_response(
         if norm_cat not in DOCLAYNET_CATEGORIES:
             continue
 
-        cat_id = DOCLAYNET_CATEGORIES[norm_cat]
+        if is_publaynet:
+            cat_info = DOCLAYNET_TO_PUBLAYNET.get(norm_cat)
+            if not cat_info:
+                continue
+            cat_id, cat_name = cat_info
+        else:
+            cat_id = DOCLAYNET_CATEGORIES[norm_cat]
+            cat_name = norm_cat
+
         raw_bbox = item.get("bbox") or item.get("box")
         if not raw_bbox or len(raw_bbox) != 4:
             continue
@@ -167,7 +201,7 @@ def parse_dots_layout_response(
         detections.append(
             {
                 "category_id": cat_id,
-                "category_name": norm_cat,
+                "category_name": cat_name,
                 "bbox": [round(bx, 2), round(by, 2), round(bw, 2), round(bh, 2)],
                 "score": round(score, 4),
             }

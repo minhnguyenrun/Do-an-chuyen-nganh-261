@@ -119,12 +119,23 @@ Do M2Doc được huấn luyện trực tiếp trên tập dữ liệu DocLayNet
 
 ---
 
-## Điểm nổi bật kỹ thuật trong dự án
+## Điểm nổi bật kỹ thuật và lưu ý khi triển khai
 
-1. **Khả năng tương thích môi trường Windows & Python 3.12**:
+1. **Kho lưu trữ chính thức của mã nguồn M2Doc**:
+   - Kho lưu trữ ban đầu `https://github.com/SCUT-HCIILab/M2Doc.git` đã đổi URL / không còn truy cập trực tiếp được (gây lỗi `exit status 128` khi git clone).
+   - Mã nguồn chính thức hiện tại được duy trì tại: `https://github.com/johnning2333/M2Doc.git`. Script và notebook đã được cập nhật đường dẫn mới.
+
+2. **Khả năng tương thích môi trường Windows & Python 3.12**:
    - MMDetection và MMCV nguyên bản yêu cầu biên dịch C++/CUDA extensions (`mmcv._ext`), vốn thường gặp lỗi thiếu compiler toolchain trên Windows.
    - Module `methods/m2doc/src/mmcv_shim.py` triển khai cơ chế dynamic module finding và shim các toán tử quan trọng (`batched_nms`, `nms`, `roi_align`, `RoIAlign`) bằng `torchvision.ops`, giúp M2Doc chạy ổn định trên CPU/GPU Windows mà không cần cài đặt Visual Studio C++ build tools.
 
-2. **Cơ chế Multi-Modal OCR Provider**:
+3. **Xử lý đường dẫn Unicode tiếng Việt trên Windows**:
+   - Khi thư mục chứa ký tự tiếng Việt có dấu (ví dụ: `Đồ án chuyên ngành`), hàm `cv2.imread()` của OpenCV trên Windows sẽ trả về `None`.
+   - Toàn bộ pipeline M2Doc sử dụng `cv2.imdecode(np.fromfile(...))` để đọc file ảnh an toàn.
+
+4. **Cơ chế Multi-Modal OCR Provider & RapidOCR**:
    - `methods/m2doc/src/ocr_provider.py` tự động đọc thông tin `pdf_cells` có sẵn trong tập dữ liệu parquet của DocLayNet (`datasets/doclaynet/raw/data/*.parquet`), cung cấp bounding box và nội dung từ vựng chuẩn xác cho mô hình BERT.
-   - Khi chạy trên ảnh bên ngoài hoặc tài liệu quét tổng quát, module tự động chuyển sang cơ chế fallback qua thư viện `RapidOCR` để bóc tách từ ngữ on-the-fly.
+   - Khi chạy trên ảnh bên ngoài hoặc tài liệu quét tổng quát, module tự động chuyển sang cơ chế fallback qua thư viện `RapidOCR` để bóc tách từ ngữ on-the-fly. Hỗ trợ tương thích cả chuẩn `RapidOCROutput` (bản mới) và `tuple` (bản cũ).
+
+5. **Tự động chọn phần cứng tăng tốc (CUDA)**:
+   - Script `methods/m2doc/src/run_inference.py` mặc định kiểm tra và sử dụng `cuda` nếu phát hiện GPU rời, giúp tốc độ xử lý đạt khoảng ~15-25s/ảnh.

@@ -10,21 +10,35 @@ Phương pháp phân tích layout tài liệu dùng [PaddleOCR](https://github.c
 
 ## Cách chạy
 
-```bash
-pip install -r methods/paddleocr_vl/requirements.txt
+1. **Cài đặt thư viện phụ thuộc:**
+   - Cài đặt cho CPU:
+     ```bash
+     pip install -r methods/paddleocr_vl/requirements.txt
+     ```
+   - Cài đặt tăng tốc GPU (CUDA 12.x, khuyến nghị):
+     ```bash
+     pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+     pip install -U "paddleocr[doc-parser]" matplotlib opencv-python tqdm pillow
+     ```
 
-# 1. Chạy layout detection trên N ảnh đầu tiên của datasets/doclaynet/processed/images
-python methods/paddleocr_vl/src/run_inference.py --dataset doclaynet --limit 20
+2. **Chạy inference theo batch (script):**
+   ```bash
+   # Chạy layout detection trên N ảnh đầu tiên của datasets/doclaynet/processed/images
+   python methods/paddleocr_vl/src/run_inference.py --dataset doclaynet --limit 20
 
-# 2. Bỏ qua ảnh đã có dự đoán (tiếp tục chạy sau khi gián đoạn hoặc chạy toàn bộ dataset)
-python methods/paddleocr_vl/src/run_inference.py --dataset doclaynet --limit 0 --skip-existing
+   # Bỏ qua ảnh đã có dự đoán (tiếp tục chạy sau khi gián đoạn hoặc chạy toàn bộ dataset)
+   python methods/paddleocr_vl/src/run_inference.py --dataset doclaynet --limit 0 --skip-existing
 
-# 3. Đánh giá metric Strict & Loose, xuất biểu đồ metrics_chart.png
-python scripts/evaluate_predictions.py --method paddleocr_vl --dataset doclaynet --loose --allow-incomplete --plot
+   # Đánh giá metric Strict & Loose, xuất biểu đồ metrics_chart.png
+   python scripts/evaluate_predictions.py --method paddleocr_vl --dataset doclaynet --loose --allow-incomplete --plot
 
-# 4. Vẽ hình đối chiếu Ground Truth vs. Dự đoán
-python visualization/scripts/visualize_predictions.py --method paddleocr_vl --dataset doclaynet --limit 20 --output-dir outputs/reports/paddleocr_vl_doclaynet
-```
+   # Vẽ hình đối chiếu Ground Truth vs. Dự đoán
+   python visualization/scripts/visualize_predictions.py --method paddleocr_vl --dataset doclaynet --limit 20 --output-dir outputs/reports/paddleocr_vl_doclaynet
+   ```
+
+3. **Chạy thử nghiệm tương tác trong Jupyter Notebook:**
+   - [paddleocr_vl_report.ipynb](notebooks/paddleocr_vl_report.ipynb) — Notebook báo cáo tổng hợp đánh giá và biểu đồ.
+   - [paddleocr_vl.ipynb](notebooks/paddleocr_vl.ipynb) — Notebook thử nghiệm tương tác và trực quan hóa song song (Side-by-side).
 
 Kết quả JSON lưu tại `outputs/predictions/paddleocr_vl/doclaynet/<image_id>.json` (mỗi ảnh một file, gồm `image_id`, `file_name`, `width`, `height`, `detections`: list `{category_id, category_name, bbox, score}`).
 Hình đối chiếu lưu tại `outputs/reports/paddleocr_vl_doclaynet/<image_id>.png`.
