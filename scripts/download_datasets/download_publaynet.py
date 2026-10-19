@@ -9,12 +9,19 @@ trong datasets/publaynet/processed/.
 Usage:
     python download_publaynet.py --max-size-gb 1
     python download_publaynet.py --max-size-gb 1 --no-extract
+    python download_publaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
 """
 
 import argparse
 import io
 import json
 from pathlib import Path
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
@@ -78,7 +85,23 @@ def download_shards(max_size_bytes: int) -> list:
     return downloaded
 
 
-def extract_processed(downloaded: list):
+def delete_raw_files(downloaded: list):
+    """Xoa cac file parquet da tai de giai phong dung luong o cung."""
+    freed_bytes = 0
+    for split, local_path in downloaded:
+        p = Path(local_path)
+        if p.exists():
+            try:
+                size = p.stat().st_size
+                p.unlink()
+                freed_bytes += size
+                print(f"[cleanup] Da xoa file raw: {p.name} ({size / 1e6:.1f} MB)")
+            except Exception as e:
+                print(f"[cleanup] Khong the xoa {p.name}: {e}")
+    print(f"[cleanup] Tong dung luong raw da giai phong: {freed_bytes / 1e6:.1f} MB")
+
+
+def extract_processed(downloaded: list, max_images: int | None = None):
     """Trich anh (.png) + annotation COCO-style tu cac shard da tai."""
     import pandas as pd
 
@@ -93,11 +116,20 @@ def extract_processed(downloaded: list):
 
     for split, paths in by_split.items():
         coco = {"images": [], "annotations": [], "categories": CATEGORIES}
+        img_count = 0
+        stop_extraction = False
+
         for path in paths:
+            if stop_extraction:
+                break
             df = pd.read_parquet(path, columns=[
                 "image_id", "file_name", "width", "height", "image", "annotations",
             ])
             for _, row in tqdm(df.iterrows(), total=len(df), desc=f"{split}:{Path(path).name}"):
+                if max_images is not None and img_count >= max_images:
+                    stop_extraction = True
+                    break
+
                 image_id = int(row["image_id"])
                 file_name = row["file_name"]
 
@@ -123,6 +155,8 @@ def extract_processed(downloaded: list):
                         "iscrowd": bool(annotations["iscrowd"][ann_index]),
                     })
 
+                img_count += 1
+
         out_path = annotations_dir / f"{split}.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(coco, f)
@@ -135,13 +169,19 @@ def main():
                          help="Dung luong toi da can tai, tinh bang GB (mac dinh 1.0)")
     parser.add_argument("--no-extract", action="store_true",
                          help="Chi tai raw parquet, khong convert sang processed/")
+    parser.add_argument("--max-images", type=int, default=None,
+                         help="So luong anh toi da can trich xuat (mac dinh: trich xuat tat ca)")
+    parser.add_argument("--delete-raw", action="store_true",
+                         help="Xoa file raw parquet sau khi trich xuat xong de tiet kiem o cung")
     args = parser.parse_args()
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     downloaded = download_shards(int(args.max_size_gb * 1e9))
 
     if not args.no_extract and downloaded:
-        extract_processed(downloaded)
+        extract_processed(downloaded, max_images=args.max_images)
+        if args.delete_raw:
+            delete_raw_files(downloaded)
 
 
 if __name__ == "__main__":

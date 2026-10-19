@@ -1,8 +1,10 @@
 # Yêu cầu thư viện cho phương pháp dots.mocr
 torch>=2.2.0
 torchvision>=0.17.0
-transformers>=4.45.0
+transformers>=4.49.0,<4.50.0
+protobuf>=4.25.0
 accelerate>=0.28.0
+pycocotools>=2.0.7
 qwen-vl-utils>=0.0.8
 pillow>=10.0.0
 huggingface_hub>=0.20.0

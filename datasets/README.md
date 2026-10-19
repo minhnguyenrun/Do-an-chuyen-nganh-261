@@ -49,8 +49,11 @@ python scripts/download_datasets/download_doclaynet.py --max-size-gb 1
 python scripts/download_datasets/download_doclaynet.py --max-size-gb 1 --no-extract
 
 python scripts/download_datasets/download_publaynet.py --max-size-gb 1
-
 python scripts/download_datasets/download_docbank.py --max-size-gb 1
+
+# hoặc tải thử nghiệm ít dung lượng (giới hạn số ảnh và tự động xóa raw sau giải nén, ~1GB tổng cộng cả 2 bộ):
+# python scripts/download_datasets/download_doclaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
+# python scripts/download_datasets/download_publaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
 ```
 
 Script sẽ:

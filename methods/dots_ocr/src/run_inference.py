@@ -1,25 +1,16 @@
-"""Inference CLI for dots.ocr (1.7B Multilingual Vision-Language Model).
-
-Paper & Model by RedNote HI Lab / Dots Studio:
-"dots.ocr: A Multimodal Vision-Language Model for Document Layout Analysis and OCR"
-Hugging Face: dots-studio/dots.ocr (or rednote-hilab/dots.ocr)
-
-Scans document images from datasets/<dataset>/processed/images and produces
-standard prediction JSON files in outputs/predictions/dots_ocr/<dataset>/<image_id>.json.
-
-Usage:
-    python methods/dots_ocr/src/run_inference.py --dataset doclaynet --limit 20
-"""
+"""Run dots.ocr (1.7B Multilingual Vision-Language Model) layout detection on a processed dataset."""
 
 import argparse
 import json
 import os
 import sys
 import time
+
+os.environ["USE_TF"] = "0"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import cv2
 import torch
 from PIL import Image
 
@@ -28,6 +19,7 @@ SRC_DIR = Path(__file__).resolve().parent
 METHOD_DIR = SRC_DIR.parent
 ROOT_DIR = METHOD_DIR.parents[1]
 
+# Fix Windows console UTF-8 encoding
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -46,34 +38,42 @@ from parser import parse_dots_layout_response
 
 DEFAULT_MODEL_ID = "dots-studio/dots.ocr"
 
-PROMPT_LAYOUT_ONLY = (
+PROMPT_LAYOUT_DOCLAYNET = (
     "Please output the layout information from this PDF image, including each layout's bbox and its category. "
     "The bbox should be in the format [x1, y1, x2, y2]. The layout categories for the PDF document include "
     "['Caption', 'Footnote', 'Formula', 'List-item', 'Page-footer', 'Page-header', 'Picture', 'Section-header', "
     "'Table', 'Text', 'Title']. Do not output the corresponding text. The layout result should be in JSON format."
 )
 
+PROMPT_LAYOUT_PUBLAYNET = (
+    "Please output the layout information from this document image, including each layout's bbox and its category. "
+    "The bbox should be in the format [x1, y1, x2, y2]. The layout categories include "
+    "['Text', 'Title', 'List', 'Table', 'Figure']. Do not output the corresponding text. The layout result should be in JSON format."
+)
+
 
 def ensure_model_weights(weights_path: Path, model_id: str = DEFAULT_MODEL_ID) -> str:
+    """Ensures model weights exist locally or prepares to download them from Hugging Face."""
     has_safetensors = any(weights_path.glob("*.safetensors")) if weights_path.is_dir() else False
     if weights_path.is_dir() and (weights_path / "config.json").exists() and has_safetensors:
-        print(f"[dots.ocr] Sử dụng trọng số có sẵn tại: {weights_path}")
+        print(f"[dots_ocr] Sử dụng trọng số có sẵn tại: {weights_path}")
         return str(weights_path)
 
-    print(f"[dots.ocr] Chưa tìm thấy trọng số đầy đủ tại: {weights_path}")
-    print(f"[dots.ocr] Đang chuẩn bị tải từ Hugging Face Hub: {model_id}...")
+    print(f"[dots_ocr] Chưa tìm thấy trọng số đầy đủ tại: {weights_path}")
+    print(f"[dots_ocr] Đang chuẩn bị tải từ Hugging Face Hub: {model_id}...")
     try:
         from huggingface_hub import snapshot_download
+
         weights_path.mkdir(parents=True, exist_ok=True)
         local_dir = snapshot_download(
             repo_id=model_id,
             local_dir=str(weights_path),
             ignore_patterns=["*.msgpack", "*.h5", "*.ot"],
         )
-        print(f"[dots.ocr] Tải model thành công về: {local_dir}")
+        print(f"[dots_ocr] Tải model thành công về: {local_dir}")
         return str(local_dir)
     except Exception as e:
-        print(f"[dots.ocr] Cảnh báo khi tải local snapshot: {e}. Thử nạp trực tiếp qua model ID.")
+        print(f"[dots_ocr] Cảnh báo khi tải local snapshot: {e}. Thử nạp trực tiếp qua model ID.")
         return model_id
 
 
@@ -81,7 +81,7 @@ def load_dots_ocr_model(model_path_or_id: str, device: str = "cpu"):
     """Loads dots.ocr AutoModel and AutoProcessor."""
     from transformers import AutoModelForCausalLM, AutoProcessor
 
-    print(f"[dots.ocr] Khởi tạo mô hình từ: {model_path_or_id} (device={device})")
+    print(f"[dots_ocr] Khởi tạo mô hình từ: {model_path_or_id} (device={device})")
     torch_dtype = torch.bfloat16 if torch.cuda.is_available() or hasattr(torch, "bfloat16") else torch.float32
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -104,29 +104,33 @@ def load_dots_ocr_model(model_path_or_id: str, device: str = "cpu"):
     return model, processor
 
 
-def run_inference_single(
+def run_on_image(
     model,
     processor,
     image_path: Path,
     device: str = "cpu",
     max_new_tokens: int = 768,
+    dataset: str = "doclaynet",
 ) -> Dict:
     """Runs layout extraction on a single image and returns standard detection format."""
     pil_img = Image.open(image_path).convert("RGB")
     width, height = pil_img.size
+
+    prompt = PROMPT_LAYOUT_PUBLAYNET if dataset.lower() == "publaynet" else PROMPT_LAYOUT_DOCLAYNET
 
     messages = [
         {
             "role": "user",
             "content": [
                 {"type": "image", "image": str(image_path)},
-                {"type": "text", "text": PROMPT_LAYOUT_ONLY},
+                {"type": "text", "text": prompt},
             ],
         }
     ]
 
     try:
         from qwen_vl_utils import process_vision_info
+
         text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         image_inputs, video_inputs = process_vision_info(messages)
         inputs = processor(
@@ -139,7 +143,7 @@ def run_inference_single(
     except Exception:
         # Direct processor call fallback
         inputs = processor(
-            text=PROMPT_LAYOUT_ONLY,
+            text=prompt,
             images=pil_img,
             return_tensors="pt",
         )
@@ -163,7 +167,9 @@ def run_inference_single(
     output_text = processor.decode(out_ids, skip_special_tokens=True).strip()
 
     # Parse JSON detections into standard format
-    detections = parse_dots_layout_response(output_text, img_width=width, img_height=height)
+    detections = parse_dots_layout_response(
+        output_text, img_width=width, img_height=height, dataset=dataset
+    )
 
     image_id = int(image_path.stem) if image_path.stem.isdigit() else image_path.stem
     return {
@@ -178,7 +184,12 @@ def run_inference_single(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="doclaynet", help="Dataset name (doclaynet or publaynet)")
-    parser.add_argument("--limit", type=int, default=20, help="Max images to process; 0 for all")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Maximum number of images; 0 processes the full dataset (default).",
+    )
     parser.add_argument("--image-ids", default="", help="Optional comma-separated image IDs")
     parser.add_argument(
         "--weights",
@@ -195,94 +206,104 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Inference device: 'cuda' or 'cpu'",
     )
-
     run_mode = parser.add_mutually_exclusive_group()
     run_mode.add_argument(
         "--skip-existing",
+        dest="skip_existing",
         action="store_true",
-        default=True,
-        help="Skip images that already have a prediction JSON (default).",
+        help="Skip images that already have a prediction (default).",
     )
     run_mode.add_argument(
         "--force",
-        action="store_true",
-        help="Overwrite existing prediction JSON files.",
+        dest="skip_existing",
+        action="store_false",
+        help="Run inference again and overwrite existing predictions.",
     )
-
+    parser.set_defaults(skip_existing=True)
     args = parser.parse_args()
-    skip_existing = not args.force
 
-    repo_root = ROOT_DIR
-    images_dir = repo_root / "datasets" / args.dataset / "processed" / "images"
-    if not images_dir.exists():
-        raise FileNotFoundError(f"Images directory not found: {images_dir}")
+    # Standard images directory
+    images_dir = ROOT_DIR / "datasets" / args.dataset / "processed" / "images"
+    if not images_dir.is_dir():
+        raise FileNotFoundError(f"Thư mục ảnh không tồn tại: {images_dir}")
 
+    # Standard output directory
     output_dir = (
         Path(args.output_dir)
         if args.output_dir
-        else repo_root / "outputs" / "predictions" / "dots_ocr" / args.dataset
+        else ROOT_DIR / "outputs" / "predictions" / "dots_ocr" / args.dataset
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Collect target images
-    image_paths = sorted(images_dir.glob("*.png")) + sorted(images_dir.glob("*.jpg"))
+    # Collect target images with natural sorting
+    image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+    image_paths = sorted(
+        [p for p in images_dir.iterdir() if p.suffix.lower() in image_extensions],
+        key=lambda path: (0, int(path.stem)) if path.stem.isdigit() else (1, path.stem),
+    )
+
     if args.image_ids:
         selected_ids = {s.strip() for s in args.image_ids.split(",") if s.strip()}
-        image_paths = [p for p in image_paths if p.stem in selected_ids]
+        image_paths = [p for p in image_paths if p.stem in selected_ids or p.name in selected_ids]
 
     if args.limit > 0:
         image_paths = image_paths[: args.limit]
 
-    print(f"Dataset: {args.dataset}")
-    print(f"Total target images: {len(image_paths)}")
-    print(f"Output directory: {output_dir}")
-    print(f"Device: {args.device}")
+    if args.skip_existing:
+        image_paths = [
+            path for path in image_paths if not (output_dir / f"{path.stem}.json").exists()
+        ]
+
+    print(
+        f"[dots_ocr] {len(image_paths)} image(s) to predict from {images_dir} (device: {args.device})"
+        f"{' (existing predictions skipped)' if args.skip_existing else ' (force overwrite)'}"
+    )
+
+    if not image_paths:
+        print(f"[dots_ocr] No work to do. Predictions are in {output_dir}")
+        return
 
     # Resolve weights and load model
     resolved_weights = ensure_model_weights(Path(args.weights))
     model, processor = load_dots_ocr_model(resolved_weights, device=args.device)
-    print("Model dots.ocr ready for inference!")
+    print("[dots_ocr] Model dots.ocr ready for inference!")
 
-    start_time = time.time()
-    processed_count = 0
-    skipped_count = 0
+    success_count = 0
+    total_seconds = 0.0
 
-    for idx, img_path in enumerate(image_paths, 1):
-        image_id = img_path.stem
-        out_json_path = output_dir / f"{image_id}.json"
-
-        if skip_existing and out_json_path.exists():
-            skipped_count += 1
-            continue
-
+    for i, img_path in enumerate(image_paths, start=1):
+        started = time.time()
         try:
-            t0 = time.time()
-            pred_record = run_inference_single(
+            res = run_on_image(
                 model=model,
                 processor=processor,
                 image_path=img_path,
                 device=args.device,
+                dataset=args.dataset,
             )
-            with open(out_json_path, "w", encoding="utf-8") as f:
-                json.dump(pred_record, f, indent=2, ensure_ascii=False)
-            dt = time.time() - t0
-            processed_count += 1
-            print(
-                f"[{idx}/{len(image_paths)}] {img_path.name} -> "
-                f"{len(pred_record['detections'])} detections ({dt:.2f}s)"
-            )
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"[{idx}/{len(image_paths)}] ERROR processing {img_path.name}: {e}")
+            elapsed = time.time() - started
+            total_seconds += elapsed
 
-    total_time = time.time() - start_time
-    print("\n--- Summary ---")
-    print(f"Processed: {processed_count}")
-    print(f"Skipped:   {skipped_count}")
-    print(f"Elapsed:   {total_time:.1f}s")
-    if processed_count > 0:
-        print(f"Avg/img:   {total_time / processed_count:.2f}s")
+            out_file = output_dir / f"{img_path.stem}.json"
+            out_file.write_text(
+                json.dumps(res, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            det_count = len(res["detections"])
+            print(
+                f"  [{i}/{len(image_paths)}] {img_path.name}: "
+                f"{det_count} boxes ({elapsed:.2f}s)"
+            )
+            success_count += 1
+        except Exception as e:
+            print(f"  [{i}/{len(image_paths)}] ERROR processing {img_path.name}: {e}")
+
+    avg_speed = (total_seconds / success_count) if success_count > 0 else 0.0
+    print(
+        f"[dots_ocr] Done. Average {avg_speed:.2f}s/image. "
+        f"Predictions: {output_dir}"
+    )
 
 
 if __name__ == "__main__":

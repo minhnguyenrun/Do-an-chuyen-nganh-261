@@ -88,9 +88,13 @@ class OCRProvider:
             Tuple of (scaled_bboxes, texts)
         """
         self._build_parquet_index()
-
         target_w, target_h = target_size
-        img = cv2.imread(str(image_path))
+
+        try:
+            data = np.fromfile(str(image_path), dtype=np.uint8)
+            img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        except Exception:
+            img = None
         if img is None:
             return [], []
         orig_h, orig_w = img.shape[:2]
@@ -125,27 +129,43 @@ class OCRProvider:
 
                 self._rapid_ocr = RapidOCR()
 
-            ocr_results, _ = self._rapid_ocr(img)
-            if ocr_results:
+            ocr_res = self._rapid_ocr(img)
+            boxes = None
+            texts = None
+
+            # Handle new RapidOCROutput object
+            if hasattr(ocr_res, "boxes") and hasattr(ocr_res, "txts"):
+                boxes = ocr_res.boxes
+                texts = ocr_res.txts
+            elif isinstance(ocr_res, tuple) and len(ocr_res) > 0:
+                raw_list = ocr_res[0]
+                if raw_list:
+                    boxes = [item[0] for item in raw_list]
+                    texts = [item[1] for item in raw_list]
+            elif isinstance(ocr_res, list):
+                boxes = [item[0] for item in ocr_res]
+                texts = [item[1] for item in ocr_res]
+
+            if boxes is not None and texts is not None and len(boxes) > 0:
                 scaled_boxes = []
-                texts = []
-                for res in ocr_results:
-                    pts = res[0]  # [[x1,y1],[x2,y1],[x2,y2],[x1,y2]]
-                    text = res[1]
+                valid_texts = []
+                for pts, text in zip(boxes, texts):
+                    if not text:
+                        continue
                     xs = [p[0] for p in pts]
                     ys = [p[1] for p in pts]
                     x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
                     scaled_boxes.append(
                         [
-                            round(x1 * scale_x, 2),
-                            round(y1 * scale_y, 2),
-                            round(x2 * scale_x, 2),
-                            round(y2 * scale_y, 2),
+                            round(float(x1) * scale_x, 2),
+                            round(float(y1) * scale_y, 2),
+                            round(float(x2) * scale_x, 2),
+                            round(float(y2) * scale_y, 2),
                         ]
                     )
-                    texts.append(text)
-                return scaled_boxes, texts
-        except Exception:
-            pass
+                    valid_texts.append(str(text))
+                return scaled_boxes, valid_texts
+        except Exception as e:
+            print(f"[OCRProvider] RapidOCR warning: {e}")
 
         return [], []

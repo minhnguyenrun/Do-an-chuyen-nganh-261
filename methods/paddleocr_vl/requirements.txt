@@ -1,4 +1,6 @@
-paddlepaddle
-paddleocr
+paddlepaddle>=3.2.1
+paddleocr[doc-parser]
 pillow
 tqdm
+matplotlib
+opencv-python
