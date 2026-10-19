@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from collections import Counter
+import statistics
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -25,6 +26,7 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
         pass
 
 from src.common.metrics import coco_map, evaluate  # noqa: E402
+from src.common.profiling import load_runtime_runs, page_time_stats  # noqa: E402
 
 
 def load_ground_truth(annotation_path: Path) -> tuple[dict, dict, dict]:
@@ -43,15 +45,17 @@ def load_ground_truth(annotation_path: Path) -> tuple[dict, dict, dict]:
     return raw_coco, ground_truth, category_names
 
 
-def load_predictions(predictions_dir: Path) -> tuple[dict, list[dict]]:
+def load_predictions(predictions_dir: Path) -> tuple[dict, dict]:
+    """Tra ve ({image_id: detections}, {image_id: inference_time_s})."""
     predictions = {}
-    documents = []
+    page_seconds = {}
     for path in predictions_dir.glob("*.json"):
         prediction = json.loads(path.read_text(encoding="utf-8"))
         image_id = prediction["image_id"]
         predictions[image_id] = prediction["detections"]
-        documents.extend(prediction["detections"])
-    return predictions, documents
+        if prediction.get("inference_time_s") is not None:
+            page_seconds[image_id] = prediction["inference_time_s"]
+    return predictions, page_seconds
 
 
 def macro_scores(result: dict, category_names: dict) -> dict:
@@ -133,10 +137,10 @@ def run_coco_map(gt_coco: dict, predictions_by_image: dict, evaluated_image_ids:
         print("\n[mAP] Khong co du doan nao de tinh mAP.")
         return
 
-    has_score = all(d.get("score") is not None for d in all_detections)
-    if not has_score:
+    no_score = sum(d.get("score") is None for d in all_detections)
+    if no_score:
         print(
-            "\n[mAP] Bo qua: file du doan khong co truong 'score' "
+            f"\n[mAP] Bo qua: {no_score:,}/{len(all_detections):,} box khong co truong 'score' "
             "(chay lai inference de luu confidence/score)."
         )
         return
@@ -178,13 +182,49 @@ def run_coco_map(gt_coco: dict, predictions_by_image: dict, evaluated_image_ids:
     )
     print(
         f"mAP small/medium/large={fmt(o['map_small'])}/{fmt(o['map_medium'])}/{fmt(o['map_large'])}  "
-        f"AR@1/10/100={fmt(o['ar1'])}/{fmt(o['ar10'])}/{fmt(o['ar100'])}"
+        f"AR@1/10/100={fmt(o['ar1'])}/{fmt(o['ar10'])}/{fmt(o['ar100'])}  "
+        f"AR small/medium/large={fmt(o['ar_small'])}/{fmt(o['ar_medium'])}/{fmt(o['ar_large'])}"
     )
     print(f"{'Category':<18}{'AP':>9}{'AP50':>9}")
     for c in sorted(
         result["per_category"].values(), key=lambda item: item["ap"], reverse=True
     ):
         print(f"{c['name']:<18}{fmt(c['ap']):>9}{fmt(c['ap50']):>9}")
+
+
+def print_runtime(method: str, dataset: str, page_seconds: dict, evaluated_image_ids: set) -> None:
+    """In thoi gian xu ly moi trang (tren tap anh duoc danh gia) va peak RAM/VRAM."""
+    seconds = [page_seconds[i] for i in evaluated_image_ids if i in page_seconds]
+    runs = load_runtime_runs(method, dataset)
+    print("\n=== Runtime ===")
+    if seconds:
+        stats = page_time_stats(seconds)
+        missing = len(evaluated_image_ids) - len(seconds)
+        print(
+            f"Time/page ({len(seconds)} pages): mean={stats['mean_s_per_page']:.3f}s  "
+            f"median={stats['median_s_per_page']:.3f}s  p95={stats['p95_s_per_page']:.3f}s"
+            + (f"  ({missing} pages without timing)" if missing else "")
+        )
+    else:
+        print("Time/page: n/a (prediction files have no 'inference_time_s'; rerun inference).")
+
+    if not runs:
+        print("Peak RAM/VRAM: n/a (no runtime summary in outputs/runtime/).")
+        return
+
+    def peak(key: str) -> str:
+        values = [run[key] for run in runs if run.get(key) is not None]
+        return f"{max(values):,.0f} MB" if values else "n/a"
+
+    devices = sorted({run.get("device", "?") for run in runs})
+    loads = [run["model_load_s"] for run in runs if run.get("model_load_s") is not None]
+    print(
+        f"Peak RAM={peak('peak_ram_mb')}  Peak VRAM={peak('peak_vram_mb')}  "
+        f"model load={f'{statistics.median(loads):.1f}s' if loads else 'n/a'}  "
+        f"device={', '.join(devices)}  ({len(runs)} run(s))"
+    )
+    if len(devices) > 1:
+        print("[warn] Inference ran on several devices; time/page is not comparable.")
 
 
 def plot_evaluation_results(
@@ -309,7 +349,7 @@ def main() -> None:
     predictions_dir = ROOT_DIR / "outputs" / "predictions" / args.method / args.dataset
 
     raw_coco, ground_truth, category_names = load_ground_truth(annotation_path)
-    predictions, detections = load_predictions(predictions_dir)
+    predictions, page_seconds = load_predictions(predictions_dir)
     missing_ids = set(ground_truth) - set(predictions)
     if missing_ids:
         if args.allow_incomplete:
@@ -320,6 +360,18 @@ def main() -> None:
                 f"Incomplete predictions: {len(missing_ids)} of {len(ground_truth)} "
                 f"ground-truth images are missing (e.g. {examples}). Run inference first (hoặc dùng --allow-incomplete)."
             )
+
+    # Chi danh gia du doan tren dung tap anh cua GT (cung split); du doan tren
+    # anh ngoai tap nay khong thuoc phep do nen bo ra, kem canh bao.
+    extra_ids = set(predictions) - set(ground_truth)
+    if extra_ids:
+        examples = ", ".join(map(str, sorted(extra_ids, key=str)[:10]))
+        print(
+            f"[warn] {len(extra_ids)} prediction file(s) have image_id not in "
+            f"{annotation_path.name} and are excluded (e.g. {examples})."
+        )
+        predictions = {k: v for k, v in predictions.items() if k in ground_truth}
+    detections = [d for dets in predictions.values() for d in dets]
 
     pred_counts = Counter(detection["category_id"] for detection in detections)
     strict = evaluate(
@@ -376,6 +428,8 @@ def main() -> None:
 
     if not args.no_map:
         run_coco_map(raw_coco, predictions, set(ground_truth.keys()))
+
+    print_runtime(args.method, args.dataset, page_seconds, set(ground_truth.keys()))
 
 
 if __name__ == "__main__":

@@ -21,7 +21,12 @@ python visualization/scripts/visualize_predictions.py --method docling --dataset
 ```
 
 Kết quả JSON lưu tại `outputs/predictions/docling/doclaynet/<image_id>.json`
-(mỗi ảnh một file, gồm `detections`: list `{category_id, category_name, bbox}`).
+(mỗi ảnh một file, gồm `detections`: list `{category_id, category_name, bbox, score}`
+và `inference_time_s`: thời gian xử lý trang đó, không tính thời gian load model).
+Thống kê thời gian/trang, peak RAM/VRAM của mỗi lần chạy được ghi thêm vào
+`outputs/runtime/docling/doclaynet.json`; `scripts/evaluate_predictions.py` in
+các số này ở mục `=== Runtime ===`. Với `--skip-existing`, file dự đoán định dạng
+cũ (không có `inference_time_s`) sẽ được chạy lại.
 Hình so sánh lưu tại `outputs/reports/docling_doclaynet/<image_id>.png`.
 
 Có thể mở và chạy lần lượt các cell trong

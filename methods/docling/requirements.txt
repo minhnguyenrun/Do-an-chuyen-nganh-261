@@ -1,3 +1,4 @@
 docling
 pillow
 tqdm
+psutil
