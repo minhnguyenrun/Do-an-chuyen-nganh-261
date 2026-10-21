@@ -1,0 +1,80 @@
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: overall
+  value: 85.8
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: arxiv_math
+  value: 86.9
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: old_scans_math
+  value: 89.1
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: table_tests
+  value: 92.1
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: old_scans
+  value: 51.1
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: headers_footers
+  value: 91.4
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: multi_column
+  value: 82.1
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: long_tiny_text
+  value: 93.7
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
+
+- dataset:
+    id: allenai/olmOCR-bench
+    task_id: baseline
+  value: 99.9
+  source:
+    url: https://huggingface.co/datalab-to/chandra-ocr-2
+    name: Chandra OCR 2 Model Card
+    user: vikp
