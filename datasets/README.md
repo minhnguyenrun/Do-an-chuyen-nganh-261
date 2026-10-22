@@ -7,9 +7,11 @@ Thư mục này chứa dữ liệu chạy **local only** — không push lên gi
 
 ```
 datasets/
-├── doclaynet/
-│   ├── raw/          # file .parquet tải thẳng từ HuggingFace (chưa xử lý)
-│   └── processed/    # ảnh (.png) + annotation (COCO-style .json) đã chuyển định dạng
+├── doclaynet/        # DocLayNet split train
+│   ├── raw/          # file .parquet tải thẳng từ HuggingFace (chưa xử lý, dùng chung mọi split)
+│   └── processed/    # ảnh (.png) + annotations/train.json (COCO-style)
+├── doclaynet_val/    # DocLayNet split validation: processed/annotations/validation.json
+├── doclaynet_test/   # DocLayNet split test: processed/annotations/test.json
 ├── publaynet/
 │   ├── raw/
 │   └── processed/
@@ -51,6 +53,10 @@ python scripts/download_datasets/download_doclaynet.py --max-size-gb 1 --no-extr
 python scripts/download_datasets/download_publaynet.py --max-size-gb 1
 python scripts/download_datasets/download_docbank.py --max-size-gb 1
 
+# tải TOÀN BỘ DocLayNet (~40GB parquet, ~36GB ảnh sau khi trích; --delete-raw xoá
+# từng shard ngay sau khi trích nên không cần giữ cả 40GB raw). Chạy lại để tiếp tục nếu bị ngắt.
+python scripts/download_datasets/download_doclaynet.py --all --splits test validation train --delete-raw
+
 # hoặc tải thử nghiệm ít dung lượng (giới hạn số ảnh và tự động xóa raw sau giải nén, ~1GB tổng cộng cả 2 bộ):
 # python scripts/download_datasets/download_doclaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
 # python scripts/download_datasets/download_publaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
@@ -63,14 +69,23 @@ Script sẽ:
    `processed/annotations/<split>.json` (COCO-style: `images`, `annotations`,
    `categories`).
 
+Với DocLayNet, `image_id` đánh lại từ 0 trong mỗi split nên mỗi split được lưu
+thành một dataset riêng (`doclaynet`, `doclaynet_val`, `doclaynet_test`) để ảnh
+không ghi đè lên nhau. Chạy method / đánh giá trên tập test:
+`--dataset doclaynet_test --split test`. Annotation của từng shard đã trích nằm ở
+`processed/annotations/_shards/`; script bỏ qua shard đã trích khi chạy lại.
+
 ## Thống kê dữ liệu đã tải
 
-- **DocLayNet**: đã tải 2 shard `train` (~1.04GB raw parquet) từ
-  `docling-project/DocLayNet-v1.2`, trích xuất được **1928 ảnh** (`.png`) và
-  **24229 bounding box** trên 11 nhãn layout, lưu tại:
-  - `datasets/doclaynet/raw/data/train-0000{0,1}-of-00072.parquet`
-  - `datasets/doclaynet/processed/images/*.png`
-  - `datasets/doclaynet/processed/annotations/train.json` (COCO-style)
+- **DocLayNet**: đã tải **toàn bộ** 85 shard (~39.8GB parquet, đã xoá raw sau khi
+  trích) từ `docling-project/DocLayNet-v1.2`, tổng **80,863 ảnh** (`.png`, ~40GB)
+  trên 11 nhãn layout:
+
+  | Split | Dataset | Ảnh | Box | Annotation |
+  |---|---|---|---|---|
+  | train | `doclaynet` | 69,375 | 941,123 | `datasets/doclaynet/processed/annotations/train.json` |
+  | validation | `doclaynet_val` | 6,489 | 99,816 | `datasets/doclaynet_val/processed/annotations/validation.json` |
+  | test | `doclaynet_test` | 4,999 | 66,531 | `datasets/doclaynet_test/processed/annotations/test.json` |
 - **PubLayNet**: chưa tải (dùng `download_publaynet.py` khi cần).
 - **DocBank**: đã stream ~1GB đầu của `DocBank_500K_ori_img.zip.001` từ
   `liminghao1630/DocBank`, được **9908 ảnh** (`.jpg`) và **131838 bounding box**

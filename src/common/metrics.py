@@ -76,7 +76,11 @@ def evaluate(gt_by_image: dict, pred_by_image: dict, category_names: dict,
     per_cat_fn = defaultdict(int)
     iou_sum, iou_count = 0.0, 0
 
-    for image_id, gt_boxes in gt_by_image.items():
+    # Duyet hop 2 tap ID: du doan tren anh khong co trong GT van bi tinh FP,
+    # thay vi bi bo qua am tham. Noi goi can tu loc pred_by_image ve dung tap
+    # anh can danh gia (vd. cung split) truoc khi goi ham nay.
+    for image_id in set(gt_by_image) | set(pred_by_image):
+        gt_boxes = gt_by_image.get(image_id, [])
         pred_boxes = pred_by_image.get(image_id, [])
         matches, unmatched_gt, unmatched_pred = match_image(
             gt_boxes, pred_boxes, iou_threshold, require_same_category)
@@ -160,7 +164,7 @@ def coco_map(gt_coco: dict, predictions: list, iou_type: str = "bbox") -> dict:
         coco_eval.summarize()
 
     keys = ["map", "map50", "map75", "map_small", "map_medium", "map_large",
-            "ar1", "ar10", "ar100"]
+            "ar1", "ar10", "ar100", "ar_small", "ar_medium", "ar_large"]
     overall = {k: float(v) for k, v in zip(keys, coco_eval.stats)}
 
     # precision: [T iou thresholds, R recall points, K categories, A areas, M maxDets]

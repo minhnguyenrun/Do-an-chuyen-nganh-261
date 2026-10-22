@@ -1,0 +1,60 @@
+- dataset:
+    id: llamaindex/ParseBench
+    task_id: mean
+  value: 55.8
+  date: '2026-03-26'
+  source:
+    url: https://huggingface.co/datasets/llamaindex/ParseBench
+    name: ParseBench
+    user: boyang-runllama
+  notes: "Pipeline name: dots_ocr_1_5_parse"
+- dataset:
+    id: llamaindex/ParseBench
+    task_id: text_content
+  value: 90.0
+  date: '2026-03-26'
+  source:
+    url: https://huggingface.co/datasets/llamaindex/ParseBench
+    name: ParseBench
+    user: boyang-runllama
+  notes: "Pipeline name: dots_ocr_1_5_parse"
+- dataset:
+    id: llamaindex/ParseBench
+    task_id: text_formatting
+  value: 47.0
+  date: '2026-03-26'
+  source:
+    url: https://huggingface.co/datasets/llamaindex/ParseBench
+    name: ParseBench
+    user: boyang-runllama
+  notes: "Pipeline name: dots_ocr_1_5_parse"
+- dataset:
+    id: llamaindex/ParseBench
+    task_id: layout
+  value: 55.8
+  date: '2026-04-09'
+  source:
+    url: https://huggingface.co/datasets/llamaindex/ParseBench
+    name: ParseBench
+    user: boyang-runllama
+  notes: "Pipeline name: dots_ocr_1_5_parse"
+- dataset:
+    id: llamaindex/ParseBench
+    task_id: chart
+  value: 0.9
+  date: '2026-04-08'
+  source:
+    url: https://huggingface.co/datasets/llamaindex/ParseBench
+    name: ParseBench
+    user: boyang-runllama
+  notes: "Pipeline name: dots_ocr_1_5_parse"
+- dataset:
+    id: llamaindex/ParseBench
+    task_id: table
+  value: 85.2
+  date: '2026-04-08'
+  source:
+    url: https://huggingface.co/datasets/llamaindex/ParseBench
+    name: ParseBench
+    user: boyang-runllama
+  notes: "Pipeline name: dots_ocr_1_5_parse"
