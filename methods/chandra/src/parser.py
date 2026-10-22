@@ -1,7 +1,7 @@
 """Parser utility to extract and standardize layout bounding boxes from Chandra OCR outputs.
 
-Supports structured JSON blocks, HTML tags with data-bbox attributes,
-and converts coordinates to DocLayNet/PubLayNet standard [x, y, w, h] format.
+Supports structured HTML tags with data-bbox & data-label attributes,
+structured JSON blocks, and converts coordinates to DocLayNet/PubLayNet standard [x, y, w, h] format.
 """
 
 import json
@@ -51,9 +51,14 @@ CHANDRA_NORM_MAP = {
     "paragraph": "Text",
     "body": "Text",
     "plain_text": "Text",
+    "plain-text": "Text",
     "code-block": "Text",
     "code_block": "Text",
     "bibliography": "Text",
+    "complex-block": "Text",
+    "complex_block": "Text",
+    "blank-page": "Text",
+    "blank_page": "Text",
     # Title & Headers
     "title": "Title",
     "document-title": "Title",
@@ -87,6 +92,7 @@ CHANDRA_NORM_MAP = {
     "picture": "Picture",
     "illustration": "Picture",
     "chemical-block": "Picture",
+    "chemical_block": "Picture",
     # Math & Formulas
     "equation-block": "Formula",
     "equation_block": "Formula",
@@ -120,19 +126,45 @@ def parse_bbox_values(val: Any) -> Optional[List[float]]:
 
 
 def parse_html_bboxes(raw_text: str) -> List[Dict[str, Any]]:
-    """Extracts bounding boxes and types from Chandra HTML-like markup."""
+    """Extracts bounding boxes and types from Chandra HTML markup with data-bbox and data-label attributes."""
     results = []
-    # Match tags with data-bbox="[x1, y1, x2, y2]" or bbox="x1,y1,x2,y2"
-    tag_matches = re.findall(
-        r'<([a-zA-Z0-9_\-]+)\s+[^>]*?(?:data-bbox|bbox)=["\']([^"\']+)["\'][^>]*?>',
-        raw_text,
-    )
-    for tag_name, bbox_str in tag_matches:
-        coords = parse_bbox_values(bbox_str)
-        if coords:
-            results.append({"type": tag_name, "bbox": coords})
 
-    # Match self-closing elements <box type="..." bbox="..."/>
+    # 1. Attempt parsing with BeautifulSoup if available
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(raw_text, "html.parser")
+        for el in soup.find_all(lambda tag: tag.has_attr("data-bbox") or tag.has_attr("bbox")):
+            bbox_str = el.get("data-bbox") or el.get("bbox")
+            cls = el.get("class")
+            cls_str = cls[0] if isinstance(cls, list) and cls else cls
+            label = el.get("data-label") or el.get("label") or cls_str or el.get("type") or el.name
+            coords = parse_bbox_values(bbox_str)
+            if coords:
+                results.append({"type": str(label), "bbox": coords})
+    except Exception:
+        results = []
+
+    if results:
+        return results
+
+    # 2. Fallback: Regex parsing matching any HTML tag with data-bbox or bbox attribute
+    tag_pattern = re.compile(r"<([a-zA-Z0-9_\-]+)([^>]*?)>", re.DOTALL)
+    bbox_pattern = re.compile(r'(?:data-bbox|bbox)=["\']([^"\']+)["\']', re.IGNORECASE)
+    label_pattern = re.compile(r'(?:data-label|label|type|class)=["\']([^"\']+)["\']', re.IGNORECASE)
+
+    for match in tag_pattern.finditer(raw_text):
+        tag_name, attrs_str = match.groups()
+        b_match = bbox_pattern.search(attrs_str)
+        if b_match:
+            bbox_str = b_match.group(1)
+            l_match = label_pattern.search(attrs_str)
+            label = l_match.group(1) if l_match else tag_name
+            coords = parse_bbox_values(bbox_str)
+            if coords:
+                results.append({"type": str(label), "bbox": coords})
+
+    # 3. Match self-closing elements <box type="..." bbox="..."/>
     box_matches = re.findall(
         r'<box\s+[^>]*?(?:type|class)=["\']([^"\']+)["\'][^>]*?bbox=["\']([^"\']+)["\'][^>]*?/?>',
         raw_text,
@@ -183,11 +215,11 @@ def parse_chandra_layout_response(
     except json.JSONDecodeError:
         pass
 
-    # 2. If JSON parsing failed, try extracting HTML style bboxes
+    # 2. If JSON parsing failed, try extracting HTML style bboxes with data-bbox and data-label
     if not raw_items:
         raw_items = parse_html_bboxes(raw_response)
 
-    # 3. If still empty, regex search for bbox and type patterns
+    # 3. If still empty, regex search for JSON-like bbox and type patterns
     if not raw_items:
         regex_matches = re.findall(
             r'\{[^{}]*?"(?:bbox|box)"\s*:\s*\[([0-9.,\s]+)\][^{}]*?"(?:type|category|label)"\s*:\s*"([^"]+)"[^{}]*?\}',
@@ -216,7 +248,7 @@ def parse_chandra_layout_response(
             continue
 
         raw_type = item.get("type") or item.get("category") or item.get("label") or "Text"
-        type_key = str(raw_type).strip().lower().replace("_", "-")
+        type_key = str(raw_type).strip().lower().replace("_", "-").replace(" ", "-")
         norm_cat = CHANDRA_NORM_MAP.get(type_key, "Text")
 
         if norm_cat not in DOCLAYNET_CATEGORIES:
@@ -238,19 +270,20 @@ def parse_chandra_layout_response(
 
         x1, y1, x2, y2 = coords
 
-        # Scale detection
+        # Scale detection:
+        # Chandra coordinates are normalized 0..1000 (or 0..1)
         if max(x1, x2) <= 1.05 and img_width > 1:
             x1 = x1 * img_width
             x2 = x2 * img_width
             y1 = y1 * img_height
             y2 = y2 * img_height
-        elif max(x1, x2) <= 1000 and (img_width > 1000 or img_height > 1000):
+        elif max(x1, x2) <= 1000.0 and max(y1, y2) <= 1000.0:
             x1 = x1 * img_width / 1000.0
             x2 = x2 * img_width / 1000.0
             y1 = y1 * img_height / 1000.0
             y2 = y2 * img_height / 1000.0
 
-        # Clip
+        # Clip within image boundaries
         x1 = max(0.0, min(float(x1), float(img_width)))
         y1 = max(0.0, min(float(y1), float(img_height)))
         x2 = max(0.0, min(float(x2), float(img_width)))
