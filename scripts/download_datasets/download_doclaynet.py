@@ -2,13 +2,13 @@
 
 Dataset gốc (docling-project/DocLayNet-v1.2) được chia thành nhiều shard
 .parquet cho mỗi split (train/validation/test), mỗi shard ~450-520MB. Script
-này tải các shard theo thứ tự train -> validation -> test cho tới khi đạt
+này tải các shard theo thứ tự split chỉ định cho tới khi đạt
 khoảng dung lượng chỉ định (mặc định 1GB), rồi (tuỳ chọn) trích ảnh +
-annotation ra dạng COCO-style JSON trong datasets/doclaynet/processed/.
+annotation ra dạng COCO-style JSON trong datasets/<output-dataset>/processed/.
 
 Usage:
     python download_doclaynet.py --max-size-gb 1
-    python download_doclaynet.py --max-size-gb 1 --no-extract
+    python download_doclaynet.py --splits test --max-images 20 --delete-raw --output-dataset doclaynet_test
     python download_doclaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
 """
 
@@ -28,7 +28,7 @@ from PIL import Image
 from tqdm import tqdm
 
 REPO_ID = "docling-project/DocLayNet-v1.2"
-SPLITS = ["train", "validation", "test"]
+DEFAULT_SPLITS = ["train", "validation", "test"]
 
 CATEGORIES = [
     {"id": 1, "name": "Caption"},
@@ -45,32 +45,31 @@ CATEGORIES = [
 ]
 
 THIS_DIR = Path(__file__).resolve().parent
-RAW_DIR = THIS_DIR / "../../datasets/doclaynet/raw"
-PROCESSED_DIR = THIS_DIR / "../../datasets/doclaynet/processed"
+ROOT_DIR = THIS_DIR / "../.."
 
 
-def list_shards(api: HfApi):
+def list_shards(api: HfApi, splits: list) -> list:
     """Trả về danh sách (split, rfilename, size_bytes) theo thứ tự ưu tiên split."""
     info = api.dataset_info(REPO_ID, files_metadata=True)
-    by_split = {split: [] for split in SPLITS}
+    by_split = {split: [] for split in splits}
     for sibling in info.siblings:
-        for split in SPLITS:
+        for split in splits:
             if sibling.rfilename.startswith(f"data/{split}-"):
                 size = sibling.size or 0
                 by_split[split].append((sibling.rfilename, size))
-    for split in SPLITS:
+    for split in splits:
         by_split[split].sort()
     shards = []
-    for split in SPLITS:
+    for split in splits:
         for rfilename, size in by_split[split]:
             shards.append((split, rfilename, size))
     return shards
 
 
-def download_shards(max_size_bytes: int) -> list:
+def download_shards(max_size_bytes: int, splits: list, raw_dir: Path) -> list:
     """Tải shard cho tới khi đạt max_size_bytes. Trả về list (split, local_path)."""
     api = HfApi()
-    shards = list_shards(api)
+    shards = list_shards(api, splits)
 
     downloaded = []
     total = 0
@@ -82,7 +81,7 @@ def download_shards(max_size_bytes: int) -> list:
             repo_id=REPO_ID,
             repo_type="dataset",
             filename=rfilename,
-            local_dir=str(RAW_DIR),
+            local_dir=str(raw_dir),
         )
         downloaded.append((split, local_path))
         total += size
@@ -107,12 +106,12 @@ def delete_raw_files(downloaded: list):
     print(f"[cleanup] Tong dung luong raw da giai phong: {freed_bytes / 1e6:.1f} MB")
 
 
-def extract_processed(downloaded: list, max_images: int | None = None):
+def extract_processed(downloaded: list, processed_dir: Path, max_images: int | None = None):
     """Trich anh (.png) + annotation COCO-style tu cac shard da tai."""
     import pandas as pd
 
-    images_dir = PROCESSED_DIR / "images"
-    annotations_dir = PROCESSED_DIR / "annotations"
+    images_dir = processed_dir / "images"
+    annotations_dir = processed_dir / "annotations"
     images_dir.mkdir(parents=True, exist_ok=True)
     annotations_dir.mkdir(parents=True, exist_ok=True)
 
@@ -175,6 +174,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-size-gb", type=float, default=1.0,
                          help="Dung luong toi da can tai, tinh bang GB (mac dinh 1.0)")
+    parser.add_argument("--splits", default="train,validation,test",
+                         help="Danh sach splits can tai, phan cach boi dau phay (vd: test hoac train,validation,test)")
+    parser.add_argument("--output-dataset", default="doclaynet",
+                         help="Ten thu muc dataset trong datasets/ (mac dinh: doclaynet, vd: doclaynet_test)")
     parser.add_argument("--no-extract", action="store_true",
                          help="Chi tai raw parquet, khong convert sang processed/")
     parser.add_argument("--max-images", type=int, default=None,
@@ -183,11 +186,19 @@ def main():
                          help="Xoa file raw parquet sau khi trich xuat xong de tiet kiem o cung")
     args = parser.parse_args()
 
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    downloaded = download_shards(int(args.max_size_gb * 1e9))
+    splits = [s.strip() for s in args.splits.split(",") if s.strip()]
+    if not splits:
+        splits = DEFAULT_SPLITS
+
+    dataset_dir = ROOT_DIR / "datasets" / args.output_dataset
+    raw_dir = dataset_dir / "raw"
+    processed_dir = dataset_dir / "processed"
+
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    downloaded = download_shards(int(args.max_size_gb * 1e9), splits=splits, raw_dir=raw_dir)
 
     if not args.no_extract and downloaded:
-        extract_processed(downloaded, max_images=args.max_images)
+        extract_processed(downloaded, processed_dir=processed_dir, max_images=args.max_images)
         if args.delete_raw:
             delete_raw_files(downloaded)
 
