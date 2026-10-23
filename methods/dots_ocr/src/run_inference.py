@@ -128,11 +128,14 @@ def run_on_image(
         }
     ]
 
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    input_w, input_h = None, None
     try:
         from qwen_vl_utils import process_vision_info
 
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         image_inputs, video_inputs = process_vision_info(messages)
+        if image_inputs and hasattr(image_inputs[0], "size"):
+            input_w, input_h = image_inputs[0].size
         inputs = processor(
             text=[text],
             images=image_inputs,
@@ -141,12 +144,19 @@ def run_on_image(
             return_tensors="pt",
         )
     except Exception:
-        # Direct processor call fallback
+        # Direct processor call fallback with chat template
         inputs = processor(
-            text=prompt,
-            images=pil_img,
+            text=[text],
+            images=[pil_img],
+            padding=True,
             return_tensors="pt",
         )
+
+    if (input_w is None or input_h is None) and "image_grid_thw" in inputs:
+        patch_size = getattr(getattr(processor, "image_processor", None), "patch_size", 14)
+        grid = inputs["image_grid_thw"][0]
+        input_h = int(grid[1].item()) * patch_size
+        input_w = int(grid[2].item()) * patch_size
 
     inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
     inputs.pop("mm_token_type_ids", None)
@@ -166,9 +176,14 @@ def run_on_image(
     out_ids = generated_ids[0][in_len:]
     output_text = processor.decode(out_ids, skip_special_tokens=True).strip()
 
-    # Parse JSON detections into standard format
+    # Parse JSON detections into standard format, rescaling from (input_w, input_h) to (width, height)
     detections = parse_dots_layout_response(
-        output_text, img_width=width, img_height=height, dataset=dataset
+        output_text,
+        img_width=width,
+        img_height=height,
+        dataset=dataset,
+        input_width=input_w,
+        input_height=input_h,
     )
 
     image_id = int(image_path.stem) if image_path.stem.isdigit() else image_path.stem

@@ -92,12 +92,37 @@ def clean_json_string(text: str) -> str:
     return text
 
 
+def _smart_resize(
+    height: int,
+    width: int,
+    factor: int = 28,
+    min_pixels: int = 3136,
+    max_pixels: int = 11289600,
+) -> Tuple[int, int]:
+    """Computes the Qwen2-VL smart_resize dimensions (resized_height, resized_width)."""
+    import math
+
+    h_bar = max(factor, round(height / factor) * factor)
+    w_bar = max(factor, round(width / factor) * factor)
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((height * width) / max_pixels)
+        h_bar = max(factor, math.floor(height / beta / factor) * factor)
+        w_bar = max(factor, math.floor(width / beta / factor) * factor)
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (height * width))
+        h_bar = math.ceil(height * beta / factor) * factor
+        w_bar = math.ceil(width * beta / factor) * factor
+    return int(h_bar), int(w_bar)
+
+
 def parse_dots_layout_response(
     raw_response: str,
     img_width: int,
     img_height: int,
     default_score: float = 0.95,
     dataset: str = "doclaynet",
+    input_width: Optional[int] = None,
+    input_height: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Parses raw text output from dots.ocr model into standard detection schema."""
     cleaned = clean_json_string(raw_response)
@@ -140,6 +165,9 @@ def parse_dots_layout_response(
     if not isinstance(data, list):
         return []
 
+    if input_width is None or input_height is None or input_width <= 0 or input_height <= 0:
+        input_height, input_width = _smart_resize(img_height, img_width)
+
     is_publaynet = dataset.lower() == "publaynet"
 
     detections = []
@@ -171,17 +199,19 @@ def parse_dots_layout_response(
             continue
 
         # If coords are normalized 0..1
-        if max(x1, x2) <= 1.05 and img_width > 1:
+        if max(x1, x2) <= 1.05 and max(y1, y2) <= 1.05 and img_width > 1:
             x1 = x1 * img_width
             x2 = x2 * img_width
             y1 = y1 * img_height
             y2 = y2 * img_height
-        # If coords are normalized 0..1000
-        elif max(x1, x2) <= 1000 and (img_width > 1000 or img_height > 1000):
-            x1 = x1 * img_width / 1000.0
-            x2 = x2 * img_width / 1000.0
-            y1 = y1 * img_height / 1000.0
-            y2 = y2 * img_height / 1000.0
+        else:
+            # dots.ocr outputs coordinates in the resized input image space (input_width x input_height)
+            scale_x = float(img_width) / float(input_width)
+            scale_y = float(img_height) / float(input_height)
+            x1 = x1 * scale_x
+            x2 = x2 * scale_x
+            y1 = y1 * scale_y
+            y2 = y2 * scale_y
 
         # Clip to image boundary
         x1 = max(0.0, min(float(x1), float(img_width)))
@@ -208,3 +238,4 @@ def parse_dots_layout_response(
         )
 
     return detections
+

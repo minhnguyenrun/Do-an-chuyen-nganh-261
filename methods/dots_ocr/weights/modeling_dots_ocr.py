@@ -125,7 +125,21 @@ class DotsOCRForCausalLM(Qwen2ForCausalLM):
             **kwargs,
         )
 
-        if cache_position[0] == 0:
+        past_seen_tokens = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None and hasattr(past_key_values, "get_seq_length")
+            else (0 if past_key_values is None else -1)
+        )
+        is_first_step = (
+            kwargs.get("is_first_iteration", False)
+            or (cache_position is not None and len(cache_position) > 0 and cache_position[0] == 0)
+            or (cache_position is None and past_seen_tokens == 0)
+        )
+        if is_first_step:
             model_inputs["pixel_values"] = pixel_values
+            model_inputs["image_grid_thw"] = kwargs.get("image_grid_thw")
+        else:
+            model_inputs.pop("pixel_values", None)
 
         return model_inputs
+

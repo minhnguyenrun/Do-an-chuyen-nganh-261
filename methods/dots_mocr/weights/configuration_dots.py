@@ -67,14 +67,12 @@ class DotsOCRConfig(Qwen2Config):
 
 
 class DotsVLProcessor(Qwen2_5_VLProcessor):
-    def __init__(self, image_processor=None, tokenizer=None, video_processor=None, chat_template=None, **kwargs):
-        # Newer transformers' Qwen2_5_VLProcessor.__init__ no longer takes a
-        # positional video_processor arg; pass only what it accepts.
+    def __init__(self, image_processor=None, tokenizer=None, chat_template=None, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
         self.image_token = "<|imgpad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
-        self.image_token_id = 151665
-        self.video_token = "<|video_pad|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
-        self.video_token_id = 151656
+        self.image_token_id = 151665 if not hasattr(tokenizer, "image_token_id") else tokenizer.image_token_id
+
 
 AutoProcessor.register("dots_ocr", DotsVLProcessor)
 CONFIG_MAPPING.register("dots_ocr", DotsOCRConfig)
+

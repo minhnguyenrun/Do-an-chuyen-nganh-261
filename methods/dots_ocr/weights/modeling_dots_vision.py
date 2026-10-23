@@ -50,13 +50,20 @@ def apply_rotary_pos_emb_vision(tensor: torch.Tensor, freqs: torch.Tensor) -> to
 class VisionRotaryEmbedding(nn.Module):
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
+        self.dim = dim
+        self.theta = theta
         inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float) / dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
+        if self.inv_freq.is_meta or torch.all(self.inv_freq == 0):
+            self.inv_freq = 1.0 / (
+                self.theta ** (torch.arange(0, self.dim, 2, device=self.inv_freq.device, dtype=torch.float) / self.dim)
+            )
         seq = torch.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
         freqs = torch.outer(seq, self.inv_freq)
         return freqs
+
 
 
 class PatchMerger(nn.Module):
@@ -283,10 +290,7 @@ class VisionSdpaAttention(nn.Module):
         if attention_mask.stride(-1) != 1:
             attention_mask = torch.empty_like(attention_mask, memory_format=torch.contiguous_format).copy_(attention_mask)
 
-        # use memory efficient backend
-        from torch.nn.attention import SDPBackend, sdpa_kernel
-        with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
-            attn_output = F.scaled_dot_product_attention(q, k, v, attention_mask, dropout_p=0.0)
+        attn_output = F.scaled_dot_product_attention(q, k, v, attention_mask, dropout_p=0.0)
 
         attn_output = attn_output.squeeze(0).transpose(0, 1)  # (seq_length, num_heads, head_dim)
         attn_output = attn_output.reshape(seq_length, -1)
@@ -380,13 +384,11 @@ class DotsVisionBlock(nn.Module):
         super().__init__()
 
         if attn_implementation == "flash_attention_2" and not flash_attn_available:
-            # fallback to eager
-            attn_implementation = "eager"
-            print("flash attention not available! fallback to eager implementation ")
+            attn_implementation = "sdpa"
 
         if attn_implementation == "ascend_fa" and not npu_available:
-            attn_implementation = "eager"
-            print("flash attention not available! fallback to eager implementation ")
+            attn_implementation = "sdpa"
+
 
         self.attn = DOTS_VISION_ATTENTION_CLASSES[attn_implementation](
             config, config.embed_dim, num_heads=config.num_attention_heads, bias=config.use_bias

@@ -40,13 +40,20 @@ def apply_rotary_pos_emb_vision(tensor: torch.Tensor, freqs: torch.Tensor) -> to
 class VisionRotaryEmbedding(nn.Module):
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
+        self.dim = dim
+        self.theta = theta
         inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float) / dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
+        if self.inv_freq.is_meta or torch.all(self.inv_freq == 0):
+            self.inv_freq = 1.0 / (
+                self.theta ** (torch.arange(0, self.dim, 2, device=self.inv_freq.device, dtype=torch.float) / self.dim)
+            )
         seq = torch.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
         freqs = torch.outer(seq, self.inv_freq)
         return freqs
+
 
 
 class PatchMerger(nn.Module):
