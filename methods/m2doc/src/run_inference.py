@@ -13,6 +13,12 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    import pyarrow.dataset  # noqa: F401 — must be imported before cv2/torch on Windows
+    import pyarrow.parquet  # noqa: F401
+except ImportError:
+    pass
+
 import cv2
 import numpy as np
 import torch
@@ -36,8 +42,11 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from ocr_provider import OCRProvider
+from src.common.profiling import ResourceMonitor, save_runtime_summary
 
 M2DOC_CLASSES = (
     "Caption",
@@ -178,6 +187,10 @@ def load_m2doc_model(config_path: Path, weights_path: Path, device: str = "cpu")
     ckpt = torch.load(str(weights_path), map_location=device, weights_only=False)
     state_dict = ckpt.get("state_dict", ckpt)
     model.load_state_dict(state_dict, strict=False)
+    # Disable mask_head during bbox-only inference to avoid 1025x1025 mask pasting overhead
+    if hasattr(model, "roi_head") and hasattr(model.roi_head, "mask_head"):
+        model.roi_head.mask_head = None
+        model.roi_head.mask_roi_extractor = None
     model.to(device)
     model.eval()
     return model
@@ -206,7 +219,7 @@ def run_on_image(
 
     orig_h, orig_w = img.shape[:2]
     target_size = (1025, 1025)
-    resized_img = cv2.resize(img, target_size)
+    resized_img = cv2.resize(img, target_size) if (orig_w, orig_h) != target_size else img
     scale_w = target_size[0] / orig_w
     scale_h = target_size[1] / orig_h
 
@@ -228,7 +241,10 @@ def run_on_image(
     text_instances = InstanceData()
     if use_ocr and ocr_provider is not None:
         ocr_boxes, ocr_texts = ocr_provider.get_ocr_for_image(
-            str(image_path), image_id=image_id if isinstance(image_id, int) else None, target_size=target_size
+            str(image_path),
+            image_id=image_id if isinstance(image_id, int) else None,
+            target_size=target_size,
+            orig_size=(orig_w, orig_h),
         )
         if ocr_boxes and ocr_texts:
             text_instances["text_bboxes"] = torch.tensor(ocr_boxes, dtype=torch.float32, device=device)
@@ -248,7 +264,8 @@ def run_on_image(
     }
 
     with torch.no_grad():
-        results = model.test_step(batch_data)
+        prepped = model.data_preprocessor(batch_data, False)
+        results = model.predict(prepped["inputs"], prepped["data_samples"], rescale=False)
 
     pred_instances = results[0].pred_instances
     pred_bboxes = pred_instances.bboxes.cpu().numpy()
@@ -303,9 +320,26 @@ def run_on_image(
     }
 
 
+def is_current_prediction(path: Path, mapping: Dict[str, int]) -> bool:
+    """Checks if an existing prediction JSON is up-to-date and uses the valid taxonomy mapping."""
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if "inference_time_s" not in data:
+            return False
+        for det in data.get("detections", []):
+            cat_name = det.get("category_name")
+            if cat_name in mapping and det.get("category_id") != mapping[cat_name]:
+                return False
+        return True
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", default="doclaynet", help="Dataset name (doclaynet or publaynet)")
+    parser.add_argument("--dataset", default="doclaynet", help="Dataset name (doclaynet, doclaynet_val, doclaynet_test, or publaynet)")
     parser.add_argument("--threshold", type=float, default=0.3, help="Confidence score threshold (default: 0.3)")
     parser.add_argument(
         "--limit",
@@ -344,7 +378,7 @@ def main():
         "--skip-existing",
         dest="skip_existing",
         action="store_true",
-        help="Skip images that already have a prediction (default).",
+        help="Skip images that already have an up-to-date prediction (default).",
     )
     run_mode.add_argument(
         "--force",
@@ -363,7 +397,7 @@ def main():
     output_dir = Path(args.output_dir) if args.output_dir else ROOT_DIR / "outputs" / "predictions" / "m2doc" / args.dataset
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    mapping = M2DOC_TO_DOCLAYNET if args.dataset == "doclaynet" else M2DOC_TO_PUBLAYNET
+    mapping = M2DOC_TO_PUBLAYNET if args.dataset.lower().startswith("publaynet") else M2DOC_TO_DOCLAYNET
 
     # Collect images with natural sorting
     image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
@@ -381,62 +415,85 @@ def main():
 
     if args.skip_existing:
         image_paths = [
-            path for path in image_paths if not (output_dir / f"{path.stem}.json").exists()
+            path for path in image_paths if not is_current_prediction(output_dir / f"{path.stem}.json", mapping)
         ]
 
     print(
         f"[m2doc] {len(image_paths)} image(s) to predict from {images_dir} "
         f"(threshold: {args.threshold}, device: {args.device}, use_ocr: {not args.no_ocr})"
-        f"{' (existing predictions skipped)' if args.skip_existing else ' (force overwrite)'}"
+        f"{' (existing predictions skipped)' if args.skip_existing else ' (force overwrite)'}",
+        flush=True,
     )
 
     if not image_paths:
-        print(f"[m2doc] No work to do. Predictions are in {output_dir}")
+        print(f"[m2doc] No work to do. Predictions are in {output_dir}", flush=True)
         return
 
-    # Load Model & OCR
-    print(f"[m2doc] Loading M2Doc model from: {args.weights}")
-    model = load_m2doc_model(Path(args.config), Path(args.weights), device=args.device)
-    ocr_provider = OCRProvider() if not args.no_ocr else None
-    print("[m2doc] M2Doc model ready for inference!")
+    # Initialize OCRProvider and build parquet index BEFORE loading CUDA/HuggingFace model
+    # to avoid PyArrow + Rust/CUDA thread pool deadlock on Windows.
+    monitor = ResourceMonitor()
+    with monitor.time_model_load():
+        ocr_provider = None
+        if not args.no_ocr:
+            ocr_provider = OCRProvider(dataset=args.dataset)
+            ocr_provider._build_parquet_index()
+        print(f"[m2doc] Loading M2Doc model from: {args.weights}", flush=True)
+        model = load_m2doc_model(Path(args.config), Path(args.weights), device=args.device)
+    print(f"[m2doc] M2Doc model ready for inference in {monitor.model_load_seconds:.2f}s!", flush=True)
 
-    success_count = 0
-    total_seconds = 0.0
+    failed = []
+    total_pages = len(image_paths)
 
     for idx, img_path in enumerate(image_paths, 1):
-        started = time.time()
         try:
-            res = run_on_image(
-                model=model,
-                ocr_provider=ocr_provider,
-                image_path=img_path,
-                mapping=mapping,
-                threshold=args.threshold,
-                device=args.device,
-                use_ocr=not args.no_ocr,
-            )
-            elapsed = time.time() - started
-            total_seconds += elapsed
-
-            out_file = output_dir / f"{img_path.stem}.json"
-            out_file.write_text(
-                json.dumps(res, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            det_count = len(res["detections"])
-            print(
-                f"  [{idx}/{len(image_paths)}] {img_path.name}: "
-                f"{det_count} boxes ({elapsed:.2f}s)"
-            )
-            success_count += 1
+            with monitor.time_page() as timer:
+                res = run_on_image(
+                    model=model,
+                    ocr_provider=ocr_provider,
+                    image_path=img_path,
+                    mapping=mapping,
+                    threshold=args.threshold,
+                    device=args.device,
+                    use_ocr=not args.no_ocr,
+                )
         except Exception as e:
-            print(f"  [{idx}/{len(image_paths)}] ERROR processing {img_path.name}: {e}")
+            if monitor.page_seconds:
+                monitor.page_seconds.pop()
+            failed.append(img_path.name)
+            print(f"  [{idx}/{total_pages}] ERROR processing {img_path.name}: {e}", flush=True)
+            continue
 
-    avg_speed = (total_seconds / success_count) if success_count > 0 else 0.0
-    print(
-        f"[m2doc] Done. Average {avg_speed:.2f}s/image. "
-        f"Predictions: {output_dir}"
-    )
+        elapsed = timer.seconds
+        res["inference_time_s"] = round(elapsed, 4)
+
+        out_file = output_dir / f"{img_path.stem}.json"
+        out_file.write_text(
+            json.dumps(res, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        det_count = len(res["detections"])
+        if idx <= 20 or idx % 100 == 0 or idx == total_pages:
+            print(
+                f"  [{idx}/{total_pages}] {img_path.name}: "
+                f"{det_count} boxes ({elapsed:.2f}s)",
+                flush=True,
+            )
+
+    if monitor.page_seconds:
+        summary = monitor.summary(dataset=args.dataset)
+        runtime_file = save_runtime_summary("m2doc", args.dataset, summary)
+        vram = summary["peak_vram_mb"]
+        print(
+            f"[m2doc] Done. Mean {summary['mean_s_per_page']:.3f}s/page "
+            f"(median {summary['median_s_per_page']:.3f}s, p95 {summary['p95_s_per_page']:.3f}s) | "
+            f"peak RAM {summary['peak_ram_mb']:.0f} MB | "
+            f"peak VRAM {f'{vram:.0f} MB' if vram is not None else 'n/a'} | {summary['device']}",
+            flush=True,
+        )
+        print(f"[m2doc] Runtime summary: {runtime_file}", flush=True)
+    print(f"[m2doc] Predictions: {output_dir}", flush=True)
+    if failed:
+        raise SystemExit(f"[m2doc] {len(failed)} image(s) failed: {', '.join(failed[:20])}")
 
 
 if __name__ == "__main__":
