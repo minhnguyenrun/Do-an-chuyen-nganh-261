@@ -21,7 +21,7 @@ bị ngắt).
 
 Usage:
     python download_doclaynet.py --max-size-gb 1
-    python download_doclaynet.py --max-size-gb 1 --no-extract
+    python download_doclaynet.py --splits test --max-images 20 --delete-raw --output-dataset doclaynet_test
     python download_doclaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
     python download_doclaynet.py --all --splits test --delete-raw
     python download_doclaynet.py --all --splits test validation train --delete-raw

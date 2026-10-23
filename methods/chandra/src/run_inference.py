@@ -38,18 +38,45 @@ from parser import parse_chandra_layout_response
 
 DEFAULT_MODEL_ID = "datalab-to/chandra-ocr-2"
 
-PROMPT_CHANDRA_DOCLAYNET = (
-    "Extract all document layout structures, blocks, and categories with their bounding boxes. "
-    "Include bounding boxes in format [x1, y1, x2, y2] and classify into categories: "
-    "['Caption', 'Footnote', 'Formula', 'List-item', 'Page-footer', 'Page-header', 'Picture', 'Section-header', "
-    "'Table', 'Text', 'Title']. Return the layout blocks in JSON format."
-)
+# Official Chandra OCR Layout Prompt from datalab-to/chandra
+OFFICIAL_CHANDRA_LAYOUT_PROMPT = """OCR this image to HTML, arranged as layout blocks. Each layout block should be a div with the data-bbox attribute representing the bounding box of the block in x0 y0 x1 y1 format. Bboxes are normalized 0-1000. The data-label attribute is the label for the block. Use the following labels:
+- Caption
+- Footnote
+- Equation-Block
+- List-Group
+- Page-Header
+- Page-Footer
+- Image
+- Section-Header
+- Table
+- Text
+- Complex-Block
+- Code-Block
+- Form
+- Table-Of-Contents
+- Figure
+- Chemical-Block
+- Diagram
+- Bibliography
+- Blank-Page
+Only use these tags ['math', 'br', 'i', 'b', 'u', 'del', 'sup', 'sub', 'table', 'tr', 'td', 'p', 'th', 'div', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'ul', 'ol', 'li', 'input', 'a', 'span', 'img', 'hr', 'tbody', 'small', 'caption', 'strong', 'thead', 'big', 'code', 'chem'], and these attributes ['class', 'colspan', 'rowspan', 'display', 'checked', 'type', 'border', 'value', 'style', 'href', 'alt', 'align', 'data-bbox', 'data-label']. 
 
-PROMPT_CHANDRA_PUBLAYNET = (
-    "Extract all document layout structures, blocks, and categories with their bounding boxes. "
-    "Include bounding boxes in format [x1, y1, x2, y2] and classify into categories: "
-    "['Text', 'Title', 'List', 'Table', 'Figure']. Return the layout blocks in JSON format."
-)
+Guidelines:
+* Inline math: Surround math with <math>...</math> tags. Math expressions should be rendered in KaTeX-compatible LaTeX. Use display for block math.
+* Tables: Use colspan and rowspan attributes to match table structure.
+* Formatting: Maintain consistent formatting with the image, including spacing, indentation, subscripts/superscripts, and special characters.
+* Images: Include a description of any images in the alt attribute of an <img> tag. Do not fill out the src property. Describe in detail inside the div tag. Also convert charts to high fidelity data, and convert diagrams to mermaid.
+* Forms: Mark checkboxes and radio buttons properly.
+* Text: join lines together properly into paragraphs using <p>...</p> tags. Use <br> tags for line breaks within paragraphs, but only when absolutely necessary to maintain meaning.
+* Chemistry: Use <chem>...</chem> tags for chemical formulas with reactive SMILES.
+* Lists: Preserve indents and proper list markers.
+* Use the simplest possible HTML structure that accurately represents the content of the block.
+* Make sure the text is accurate and easy for a human to read and interpret. Reading order should be correct and natural.""".strip()
+
+try:
+    from chandra.prompts import OCR_LAYOUT_PROMPT as CHANDRA_PROMPT
+except ImportError:
+    CHANDRA_PROMPT = OFFICIAL_CHANDRA_LAYOUT_PROMPT
 
 
 def ensure_model_weights(weights_path: Path, model_id: str = DEFAULT_MODEL_ID) -> str:
@@ -77,22 +104,42 @@ def ensure_model_weights(weights_path: Path, model_id: str = DEFAULT_MODEL_ID) -
         return model_id
 
 
-def load_chandra_model(model_path_or_id: str, device: str = "cpu"):
+def load_chandra_model(model_path_or_id: str, device: str = "cpu", load_in_4bit: bool = False):
     """Loads Chandra model and processor."""
     from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoProcessor
 
-    print(f"[chandra] Khởi tạo mô hình từ: {model_path_or_id} (device={device})")
-    torch_dtype = torch.bfloat16 if torch.cuda.is_available() or hasattr(torch, "bfloat16") else torch.float32
+    print(f"[chandra] Khởi tạo mô hình từ: {model_path_or_id} (device={device}, 4bit={load_in_4bit})")
+    dtype = torch.bfloat16 if torch.cuda.is_available() or hasattr(torch, "bfloat16") else torch.float32
+
+    model_kwargs = {
+        "dtype": dtype,
+        "trust_remote_code": True,
+        "low_cpu_mem_usage": True,
+    }
+
+    if device != "cpu":
+        model_kwargs["device_map"] = device
+
+    if load_in_4bit and device != "cpu":
+        try:
+            from transformers import BitsAndBytesConfig
+
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_type="nf4",
+            )
+            model_kwargs.pop("dtype", None)
+            print("[chandra] Kích hoạt lượng tử hóa 4-bit (BitsAndBytes NF4)")
+        except Exception as e:
+            print(f"[chandra] Không thể kích hoạt 4-bit ({e}), fallback về bfloat16")
 
     model = None
     for model_cls in [AutoModelForImageTextToText, AutoModelForCausalLM]:
         try:
             model = model_cls.from_pretrained(
                 model_path_or_id,
-                torch_dtype=torch_dtype,
-                device_map=device if device != "cpu" else None,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True,
+                **model_kwargs,
             )
             break
         except Exception:
@@ -116,37 +163,55 @@ def run_on_image(
     device: str = "cpu",
     max_new_tokens: int = 1536,
     dataset: str = "doclaynet",
+    prompt: Optional[str] = None,
+    debug: bool = False,
 ) -> Dict:
     """Runs layout extraction on a single image and returns standard detection format."""
     pil_img = Image.open(image_path).convert("RGB")
     width, height = pil_img.size
 
-    prompt = PROMPT_CHANDRA_PUBLAYNET if dataset.lower() == "publaynet" else PROMPT_CHANDRA_DOCLAYNET
+    prompt_text = prompt or CHANDRA_PROMPT
 
     messages = [
         {
             "role": "user",
             "content": [
                 {"type": "image", "image": pil_img},
-                {"type": "text", "text": prompt},
+                {"type": "text", "text": prompt_text},
             ],
         }
     ]
 
+    inputs = None
+    # 1. Try apply_chat_template with tokenize=True directly
     try:
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = processor(
-            text=[text],
-            images=[pil_img],
-            padding=True,
+        inputs = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
             return_tensors="pt",
         )
     except Exception:
-        inputs = processor(
-            text=prompt,
-            images=pil_img,
-            return_tensors="pt",
-        )
+        inputs = None
+
+    # 2. Fallback: tokenize=False then call processor with images
+    if inputs is None:
+        try:
+            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = processor(
+                text=[text],
+                images=[pil_img],
+                padding=True,
+                return_tensors="pt",
+            )
+        except Exception:
+            # 3. Fallback: direct prompt and images
+            inputs = processor(
+                text=prompt_text,
+                images=pil_img,
+                return_tensors="pt",
+            )
 
     inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
 
@@ -161,6 +226,13 @@ def run_on_image(
     detections = parse_chandra_layout_response(
         output_text, img_width=width, img_height=height, dataset=dataset
     )
+
+    if not detections or debug:
+        snippet = output_text[:300].replace("\n", " ") if output_text else "<EMPTY OUTPUT>"
+        if not detections:
+            print(f"    [WARN] {image_path.name}: 0 boxes found! Raw model output preview: {snippet}...")
+        elif debug:
+            print(f"    [DEBUG] {image_path.name} output preview: {snippet}...")
 
     image_id = int(image_path.stem) if image_path.stem.isdigit() else image_path.stem
     return {
@@ -206,7 +278,17 @@ def main():
         "--max-new-tokens",
         type=int,
         default=1536,
-        help="Max generated tokens for layout JSON",
+        help="Max generated tokens for layout HTML (default: 1536)",
+    )
+    parser.add_argument(
+        "--load-in-4bit",
+        action="store_true",
+        help="Load model in 4-bit precision with bitsandbytes to save VRAM and speed up",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print raw output preview for each processed image",
     )
     run_mode = parser.add_mutually_exclusive_group()
     run_mode.add_argument(
@@ -274,7 +356,11 @@ def main():
 
     # Load Model
     start_load = time.time()
-    model, processor = load_chandra_model(model_target, device=args.device)
+    model, processor = load_chandra_model(
+        model_target,
+        device=args.device,
+        load_in_4bit=args.load_in_4bit,
+    )
     print(f"[chandra] Model loaded successfully in {time.time() - start_load:.2f}s")
 
     # Run inference loop
@@ -291,6 +377,7 @@ def main():
                 device=args.device,
                 max_new_tokens=args.max_new_tokens,
                 dataset=args.dataset,
+                debug=args.debug,
             )
             elapsed = time.time() - started
             total_seconds += elapsed
