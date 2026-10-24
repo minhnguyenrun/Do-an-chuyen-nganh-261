@@ -8,6 +8,7 @@ import time
 
 os.environ["USE_TF"] = "0"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -33,8 +34,11 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from parser import parse_dots_layout_response
+from src.common.profiling import ResourceMonitor, save_runtime_summary
 
 DEFAULT_MODEL_ID = "dots-studio/dots.ocr"
 
@@ -162,7 +166,7 @@ def run_on_image(
     inputs.pop("mm_token_type_ids", None)
 
     eos_token_id = [151643, 151645, 151673]
-    with torch.no_grad():
+    with torch.inference_mode():
         generated_ids = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
@@ -271,17 +275,23 @@ def main():
 
     print(
         f"[dots_ocr] {len(image_paths)} image(s) to predict from {images_dir} (device: {args.device})"
-        f"{' (existing predictions skipped)' if args.skip_existing else ' (force overwrite)'}"
+        f"{' (existing predictions skipped)' if args.skip_existing else ' (force overwrite)'}",
+        flush=True,
     )
 
     if not image_paths:
-        print(f"[dots_ocr] No work to do. Predictions are in {output_dir}")
+        print(f"[dots_ocr] No work to do. Predictions are in {output_dir}", flush=True)
         return
 
-    # Resolve weights and load model
-    resolved_weights = ensure_model_weights(Path(args.weights))
-    model, processor = load_dots_ocr_model(resolved_weights, device=args.device)
-    print("[dots_ocr] Model dots.ocr ready for inference!")
+    # Resolve weights and load model with resource monitoring
+    monitor = ResourceMonitor()
+    with monitor.time_model_load():
+        resolved_weights = ensure_model_weights(Path(args.weights))
+        model, processor = load_dots_ocr_model(resolved_weights, device=args.device)
+    print(
+        f"[dots_ocr] Model dots.ocr ready for inference in {monitor.model_load_seconds:.2f}s!",
+        flush=True,
+    )
 
     success_count = 0
     total_seconds = 0.0
@@ -289,15 +299,17 @@ def main():
     for i, img_path in enumerate(image_paths, start=1):
         started = time.time()
         try:
-            res = run_on_image(
-                model=model,
-                processor=processor,
-                image_path=img_path,
-                device=args.device,
-                dataset=args.dataset,
-            )
-            elapsed = time.time() - started
+            with monitor.time_page() as timer:
+                res = run_on_image(
+                    model=model,
+                    processor=processor,
+                    image_path=img_path,
+                    device=args.device,
+                    dataset=args.dataset,
+                )
+            elapsed = timer.seconds
             total_seconds += elapsed
+            res["inference_time_s"] = round(elapsed, 4)
 
             out_file = output_dir / f"{img_path.stem}.json"
             out_file.write_text(
@@ -306,18 +318,39 @@ def main():
             )
 
             det_count = len(res["detections"])
+            avg_so_far = total_seconds / i
+            remaining_sec = avg_so_far * (len(image_paths) - i)
+            eta_str = (
+                time.strftime("%H:%M:%S", time.gmtime(remaining_sec))
+                if remaining_sec >= 3600
+                else time.strftime("%M:%S", time.gmtime(remaining_sec))
+            )
+
+            # Category distribution summary
+            cat_counts = Counter(d.get("category_name", d.get("category", "unknown")) for d in res["detections"])
+            cats_str = ", ".join(f"{k}: {v}" for k, v in cat_counts.most_common(4))
+            summary_tail = f" [{cats_str}]" if cats_str else " [no boxes]"
+
             print(
                 f"  [{i}/{len(image_paths)}] {img_path.name}: "
-                f"{det_count} boxes ({elapsed:.2f}s)"
+                f"{det_count} boxes ({elapsed:.2f}s | avg: {avg_so_far:.2f}s | ETA: {eta_str}){summary_tail}",
+                flush=True,
             )
             success_count += 1
         except Exception as e:
-            print(f"  [{i}/{len(image_paths)}] ERROR processing {img_path.name}: {e}")
+            if monitor.page_seconds:
+                monitor.page_seconds.pop()
+            print(f"  [{i}/{len(image_paths)}] ERROR processing {img_path.name}: {e}", flush=True)
+
+    if monitor.page_seconds:
+        summary = monitor.summary(dataset=args.dataset)
+        save_runtime_summary("dots_ocr", args.dataset, summary)
 
     avg_speed = (total_seconds / success_count) if success_count > 0 else 0.0
     print(
-        f"[dots_ocr] Done. Average {avg_speed:.2f}s/image. "
-        f"Predictions: {output_dir}"
+        f"[dots_ocr] Done {success_count}/{len(image_paths)} images. Average {avg_speed:.2f}s/image. "
+        f"Predictions: {output_dir}",
+        flush=True,
     )
 
 
