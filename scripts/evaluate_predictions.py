@@ -25,7 +25,13 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
     except Exception:
         pass
 
-from src.common.metrics import coco_map, evaluate  # noqa: E402
+from src.common.metrics import (  # noqa: E402
+    coco_map,
+    evaluate,
+    evaluate_boxes,
+    evaluate_boxes_multi_iou,
+    coco_box_map,
+)
 from src.common.profiling import load_runtime_runs, page_time_stats  # noqa: E402
 
 
@@ -308,6 +314,143 @@ def plot_evaluation_results(
     return fig
 
 
+def plot_box_evaluation_results(
+    multi_iou_results: list[dict],
+    single_res: dict,
+    title: str = "Bounding Box Evaluation",
+    output_path: Path | str | None = None,
+) -> plt.Figure:
+    """Ve bieu do phan tich chat luong Bounding Box thuan tuy theo cac nguong IoU."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5.5))
+
+    # Subplot 1: IoU vs Metrics Curve
+    ious = [r["iou_threshold"] for r in multi_iou_results]
+    recalls = [r["recall"] for r in multi_iou_results]
+    precisions = [r["precision"] for r in multi_iou_results]
+    f1s = [r["f1"] for r in multi_iou_results]
+    mean_ious = [r["mean_iou_matched"] for r in multi_iou_results]
+
+    ax1.plot(ious, recalls, marker="o", color="#f97316", linewidth=2.5, label="Recall (Tỉ lệ nhận diện)")
+    ax1.plot(ious, precisions, marker="s", color="#3b82f6", linewidth=2.5, label="Precision (Độ chính xác)")
+    ax1.plot(ious, f1s, marker="^", color="#10b981", linewidth=2.5, label="F1-Score")
+    ax1.plot(ious, mean_ious, marker="d", color="#8b5cf6", linewidth=1.8, linestyle="--", label="Mean IoU (độ khít)")
+
+    idx_50 = 0
+    ax1.annotate(
+        f"Recall@0.5: {recalls[idx_50]*100:.1f}%\nPrec@0.5: {precisions[idx_50]*100:.1f}%",
+        xy=(ious[idx_50], recalls[idx_50]),
+        xytext=(ious[idx_50] + 0.05, recalls[idx_50] - 0.12),
+        arrowprops=dict(arrowstyle="->", color="#f97316", lw=1.5),
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="#fff7ed", edgecolor="#f97316", alpha=0.9),
+    )
+
+    ax1.set_xlabel("IoU Threshold", fontsize=11)
+    ax1.set_ylabel("Score", fontsize=11)
+    ax1.set_xlim(0.48, 0.97)
+    ax1.set_ylim(0.0, 1.05)
+    ax1.set_title("Đường cong BBox Metrics theo ngưỡng IoU", fontsize=12, fontweight="bold")
+    ax1.grid(True, linestyle="--", alpha=0.5)
+    ax1.legend(loc="lower left", fontsize=10)
+
+    # Subplot 2: Phan bo hop TP, FP, FN tai nguong kiem thu
+    tp = single_res["tp"]
+    fp = single_res["fp"]
+    fn = single_res["fn"]
+    bar_labels = ["True Positive\n(Khớp đúng)", "False Positive\n(Dư / sai lệch)", "False Negative\n(Bị bỏ sót)"]
+    bar_vals = [tp, fp, fn]
+    bar_colors = ["#10b981", "#ef4444", "#f59e0b"]
+
+    bars = ax2.bar(bar_labels, bar_vals, color=bar_colors, width=0.55, edgecolor="#333", linewidth=0.8)
+    for b in bars:
+        h = b.get_height()
+        ax2.annotate(f"{h:,}", xy=(b.get_x() + b.get_width() / 2, h),
+                     xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
+                     fontweight="bold", fontsize=11)
+
+    ax2.set_ylabel("Số lượng Bounding Box", fontsize=11)
+    ax2.set_title(f"Phân bố Hộp tại ngưỡng IoU >= {single_res['iou_threshold']:.2f}", fontsize=12, fontweight="bold")
+    ax2.grid(axis="y", linestyle="--", alpha=0.5)
+
+    summary_text = (
+        f"Tổng GT: {single_res['total_gt']:,} hộp\n"
+        f"Tổng Pred: {single_res['total_pred']:,} hộp\n"
+        f"Recall: {single_res['recall']*100:.2f}%\n"
+        f"Precision: {single_res['precision']*100:.2f}%\n"
+        f"F1: {single_res['f1']:.4f}\n"
+        f"Mean IoU: {single_res['mean_iou_matched']:.4f}"
+    )
+    ax2.text(
+        0.97, 0.95, summary_text,
+        transform=ax2.transAxes,
+        fontsize=10,
+        va="top", ha="right",
+        bbox=dict(boxstyle="round,pad=0.5", facecolor="#f8fafc", edgecolor="#cbd5e1", alpha=0.95)
+    )
+
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+    plt.tight_layout()
+
+    if output_path:
+        out_p = Path(output_path)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_p, dpi=200, bbox_inches="tight")
+        print(f"[eval] Box evaluation chart saved to: {out_p}")
+
+    return fig
+
+
+def print_box_report(
+    single_res: dict,
+    multi_res: list[dict],
+    method: str,
+    dataset: str,
+    split: str,
+    num_images: int,
+) -> None:
+    print(f"\n{'=' * 88}")
+    print(f" ĐÁNH GIÁ CHẤT LƯỢNG BOUNDING BOX (CLASS-AGNOSTIC / LOCALIZATION ONLY)")
+    print(f" Method: {method} | Dataset: {dataset}/{split} | Số lượng ảnh đánh giá: {num_images:,}")
+    print(f" Tổng Ground Truth: {single_res['total_gt']:,} hộp | Tổng Dự đoán: {single_res['total_pred']:,} hộp")
+    print(f"{'=' * 88}")
+
+    print(f"\n[Kết quả tại ngưỡng IoU >= {single_res['iou_threshold']:.2f}]:")
+    print(f"  • Tỉ lệ BBox được nhận diện (Recall) : {single_res['recall']*100:.2f}%  ({single_res['tp']:,} / {single_res['total_gt']:,} hộp)")
+    print(f"  • Độ chính xác BBox (Precision)       : {single_res['precision']*100:.2f}%  ({single_res['tp']:,} / {single_res['total_pred']:,} hộp)")
+    print(f"  • F1-Score                           : {single_res['f1']:.4f}")
+    print(f"  • Độ khít viền trung bình (Mean IoU) : {single_res['mean_iou_matched']:.4f}")
+    print(f"  • Thống kê chi tiết                  : TP={single_res['tp']:,} | FP={single_res['fp']:,} | FN={single_res['fn']:,}")
+
+    print(f"\n--- Bảng độ đo chi tiết theo các ngưỡng IoU ---")
+    print(f"{'IoU Thresh':<12}{'GT':>8}{'Pred':>8}{'TP':>8}{'FP':>8}{'FN':>8}{'Recall':>12}{'Prec':>12}{'F1':>10}{'Mean IoU':>12}")
+    for r in multi_res:
+        print(f">={r['iou_threshold']:<10.2f}{r['total_gt']:>8}{r['total_pred']:>8}{r['tp']:>8}{r['fp']:>8}{r['fn']:>8}{r['recall']*100:>11.2f}%{r['precision']*100:>11.2f}%{r['f1']:>10.4f}{r['mean_iou_matched']:>12.4f}")
+
+
+def run_coco_box_map(raw_coco: dict, predictions: dict, evaluated_image_ids: set) -> None:
+    subset_coco = {
+        **raw_coco,
+        "images": [img for img in raw_coco["images"] if img["id"] in evaluated_image_ids],
+        "annotations": [
+            ann for ann in raw_coco["annotations"] if ann["image_id"] in evaluated_image_ids
+        ],
+    }
+    pred_list = [
+        {**detection, "image_id": image_id}
+        for image_id, detections in predictions.items()
+        if image_id in evaluated_image_ids
+        for detection in detections
+    ]
+    try:
+        res = coco_box_map(subset_coco, pred_list)
+        ov = res["overall"]
+        print(f"\n=== Class-Agnostic Box mAP (COCO-style) ===")
+        print(f"Box mAP@[.5:.95]={ov['map']:.3f}  Box mAP@.5={ov['map50']:.3f}  Box mAP@.75={ov['map75']:.3f}")
+        print(f"Box AR@100={ov['ar100']:.3f}  AR small/medium/large={ov['ar_small']:.3f}/{ov['ar_medium']:.3f}/{ov['ar_large']:.3f}")
+    except Exception as e:
+        print(f"[warn] Không thể tính Class-Agnostic COCO mAP: {e}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--method", default="docling")
@@ -318,6 +461,11 @@ def main() -> None:
         "--loose",
         action="store_true",
         help="Also report localization-only scores, ignoring class labels.",
+    )
+    parser.add_argument(
+        "--box-only",
+        action="store_true",
+        help="Chỉ đánh giá chất lượng Bounding Box (Class-agnostic), bỏ qua hoàn toàn nhãn class.",
     )
     parser.add_argument(
         "--allow-incomplete",
@@ -372,6 +520,30 @@ def main() -> None:
         )
         predictions = {k: v for k, v in predictions.items() if k in ground_truth}
     detections = [d for dets in predictions.values() for d in dets]
+
+    if args.box_only:
+        evaluated_ids = set(ground_truth.keys())
+        single_box_eval = evaluate_boxes(ground_truth, predictions, iou_threshold=args.iou_threshold)
+        multi_box_eval = evaluate_boxes_multi_iou(ground_truth, predictions)
+        print_box_report(single_box_eval, multi_box_eval, args.method, args.dataset, args.split, len(ground_truth))
+
+        if args.plot:
+            if args.plot == "default":
+                plot_path = ROOT_DIR / "outputs" / "reports" / f"{args.method}_{args.dataset}" / "metrics_chart.png"
+            else:
+                plot_path = Path(args.plot)
+            plot_box_evaluation_results(
+                multi_box_eval,
+                single_box_eval,
+                title=f"{args.method.capitalize()} Bounding Box Evaluation ({args.dataset}/{args.split})",
+                output_path=plot_path,
+            )
+
+        if not args.no_map:
+            run_coco_box_map(raw_coco, predictions, evaluated_ids)
+
+        print_runtime(args.method, args.dataset, page_seconds, evaluated_ids)
+        return
 
     pred_counts = Counter(detection["category_id"] for detection in detections)
     strict = evaluate(

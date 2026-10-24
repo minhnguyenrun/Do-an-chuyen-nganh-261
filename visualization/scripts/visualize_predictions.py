@@ -153,11 +153,31 @@ def extract_group_labels(items: list) -> list:
     return labels
 
 
-def draw_boxes(image: Image.Image, boxes: list, font: ImageFont.ImageFont) -> Image.Image:
-    """Ve cac bounding box len anh voi xu ly chong de chu va ho tro box mang nhieu nhan."""
+def draw_boxes(image: Image.Image, boxes: list, font: ImageFont.ImageFont,
+               box_only: bool = False, color: Tuple[int, int, int] | None = None) -> Image.Image:
+    """Ve cac bounding box len anh voi xu ly chong de chu va ho tro box mang nhieu nhan.
+    Neu box_only=True, chi ve vien bounding box va diem tin cay (neu co), bo qua nhan class."""
     out = image.copy().convert("RGB")
     draw = ImageDraw.Draw(out)
     img_w, img_h = image.size
+
+    if box_only:
+        default_color = color if color is not None else (37, 99, 235)
+        for b in boxes:
+            bx = b["bbox"] if isinstance(b, dict) else b
+            x, y, w, h = bx
+            draw.rectangle([x, y, x + w, y + h], outline=default_color, width=2)
+            if isinstance(b, dict) and b.get("score") is not None:
+                score_val = float(b["score"])
+                text = f"{score_val:.2f}"
+                tb = font.getbbox(text)
+                tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                badge_w, badge_h = tw + 6, th + 4
+                badge_x = max(2, min(int(x), img_w - badge_w - 2))
+                badge_y = max(2, int(y) - badge_h - 2) if int(y) - badge_h - 2 >= 0 else int(y) + 2
+                draw.rounded_rectangle([badge_x, badge_y, badge_x + badge_w, badge_y + badge_h], radius=2, fill=default_color)
+                draw.text((badge_x + 3, badge_y + 2), text, fill=(255, 255, 255), font=font)
+        return out
 
     groups = group_overlapping_boxes(boxes)
     placed_badges: List[Tuple[float, float, float, float]] = []
@@ -292,6 +312,11 @@ def main():
     parser.add_argument("--dataset", default="doclaynet", help="Ten dataset (vd: doclaynet)")
     parser.add_argument("--split", default="train", help="Split cua ground truth (vd: train)")
     parser.add_argument("--limit", type=int, default=10, help="So anh toi da se ve (mac dinh 10)")
+    parser.add_argument(
+        "--box-only",
+        action="store_true",
+        help="Chỉ trực quan hóa Bounding Box thuần túy, bỏ qua nhãn class.",
+    )
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Thu muc output (mac dinh visualization/figures/<method>_<dataset>)")
     args = parser.parse_args()
@@ -314,7 +339,7 @@ def main():
         prediction_paths = prediction_paths[: args.limit]
 
     font = load_font(13)
-    print(f"[viz] Ve {len(prediction_paths)} anh ({args.method} vs ground truth) tu {predictions_dir}")
+    print(f"[viz] Ve {len(prediction_paths)} anh ({args.method} vs ground truth | box_only={args.box_only}) tu {predictions_dir}")
     for pred_path in prediction_paths:
         with open(pred_path, "r", encoding="utf-8") as f:
             pred = json.load(f)
@@ -326,12 +351,12 @@ def main():
 
         base = Image.open(image_path)
         gt_boxes = gt_by_image.get(image_id, [])
-        left = draw_boxes(base, gt_boxes, font)
-        right = draw_boxes(base, pred["detections"], font)
+        left = draw_boxes(base, gt_boxes, font, box_only=args.box_only, color=(16, 185, 129))
+        right = draw_boxes(base, pred["detections"], font, box_only=args.box_only, color=(37, 99, 235))
         combined = make_side_by_side(
             left, right,
-            f"Ground Truth ({len(gt_boxes)} box)",
-            f"{args.method} ({len(pred['detections'])} box)",
+            f"Ground Truth ({len(gt_boxes)} boxes)" if args.box_only else f"Ground Truth ({len(gt_boxes)} box)",
+            f"{args.method} ({len(pred['detections'])} boxes)" if args.box_only else f"{args.method} ({len(pred['detections'])} box)",
         )
 
         out_path = output_dir / f"{image_id}.png"

@@ -180,3 +180,93 @@ def coco_map(gt_coco: dict, predictions: list, iou_type: str = "bbox") -> dict:
             "ap50": float(np.mean(p_50[p_50 > -1])) if (p_50 > -1).any() else -1.0,
         }
     return {"overall": overall, "per_category": per_category}
+
+
+def evaluate_boxes(
+    gt_by_image: dict,
+    pred_by_image: dict,
+    iou_threshold: float = 0.5,
+) -> dict:
+    """Danh gia chat luong Bounding Box thuan tuy (Class-agnostic / Localization-only),
+    hoan toan bo qua nhan class.
+
+    gt_by_image / pred_by_image: {image_id: [{"bbox": [x, y, w, h], ...}, ...] hoac [[x, y, w, h], ...]}.
+
+    Tra ve dict:
+        total_gt, total_pred, tp, fp, fn, precision, recall, f1, mean_iou_matched, iou_threshold
+    """
+    total_tp = 0
+    total_gt = 0
+    total_pred = 0
+    iou_sum = 0.0
+    iou_count = 0
+
+    all_image_ids = set(gt_by_image) | set(pred_by_image)
+    for image_id in all_image_ids:
+        raw_gts = gt_by_image.get(image_id, [])
+        raw_preds = pred_by_image.get(image_id, [])
+
+        gt_boxes = [{"bbox": b["bbox"] if isinstance(b, dict) else b} for b in raw_gts]
+        pred_boxes = [{"bbox": b["bbox"] if isinstance(b, dict) else b} for b in raw_preds]
+
+        total_gt += len(gt_boxes)
+        total_pred += len(pred_boxes)
+
+        matches, _, _ = match_image(
+            gt_boxes, pred_boxes, iou_threshold=iou_threshold, require_same_category=False
+        )
+        total_tp += len(matches)
+        for _, _, score in matches:
+            iou_sum += score
+            iou_count += 1
+
+    total_fp = total_pred - total_tp
+    total_fn = total_gt - total_tp
+    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    mean_iou = iou_sum / iou_count if iou_count > 0 else 0.0
+
+    return {
+        "iou_threshold": iou_threshold,
+        "total_gt": total_gt,
+        "total_pred": total_pred,
+        "tp": total_tp,
+        "fp": total_fp,
+        "fn": total_fn,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "mean_iou_matched": mean_iou,
+    }
+
+
+def evaluate_boxes_multi_iou(
+    gt_by_image: dict,
+    pred_by_image: dict,
+    iou_thresholds: list[float] | None = None,
+) -> list[dict]:
+    """Danh gia Bounding Box tren danh sach nhieu nguong IoU (mac dinh: 0.50 den 0.95 buoc 0.05)."""
+    if iou_thresholds is None:
+        iou_thresholds = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
+    return [
+        evaluate_boxes(gt_by_image, pred_by_image, iou_threshold=thresh)
+        for thresh in iou_thresholds
+    ]
+
+
+def coco_box_map(gt_coco: dict, predictions: list, iou_type: str = "bbox") -> dict:
+    """Tinh COCO mAP thuan tuy cho Bounding Box (Class-agnostic Box mAP), bo qua class.
+
+    Quy doi toan bo ground truth va predictions ve mot class duy nhat: ID=1 ('BBox').
+    """
+    dummy_gt_coco = dict(gt_coco)
+    dummy_gt_coco["categories"] = [{"id": 1, "name": "BBox"}]
+    dummy_gt_coco["annotations"] = [
+        {**ann, "category_id": 1} for ann in dummy_gt_coco.get("annotations", [])
+    ]
+    dummy_predictions = [
+        {**pred, "category_id": 1} for pred in predictions
+    ]
+    return coco_map(dummy_gt_coco, dummy_predictions, iou_type=iou_type)
+

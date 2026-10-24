@@ -1,0 +1,9 @@
+# Cấu hình Dataset DocLayNet 1-Class (Chỉ Bounding Box thuần túy)
+path: D:/Semester_261/DoAnChuyenNganh/DO-AN-261
+train: D:/Semester_261/DoAnChuyenNganh/DO-AN-261/methods/method1/data/train_images.txt
+val: D:/Semester_261/DoAnChuyenNganh/DO-AN-261/methods/method1/data/val_images.txt
+test: D:/Semester_261/DoAnChuyenNganh/DO-AN-261/methods/method1/data/test_images.txt
+
+nc: 1
+names:
+  0: bbox

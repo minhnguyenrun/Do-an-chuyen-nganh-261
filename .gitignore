@@ -27,6 +27,8 @@ methods/m2doc/mmdetection/
 
 # Ảnh trực quan hóa local
 visualization/figures/
+runs/
+**/train_runs/
 
 # Bí mật và rác hệ điều hành
 .env
