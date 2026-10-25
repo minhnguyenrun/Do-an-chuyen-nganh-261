@@ -1,0 +1,4 @@
+-r requirements.txt
+paddlepaddle>=3.2.1,<4
+paddleocr[doc-parser]>=3.3,<4
+transformers>=5.20,<6

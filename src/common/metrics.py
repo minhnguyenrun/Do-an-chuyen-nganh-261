@@ -157,7 +157,13 @@ def coco_map(gt_coco: dict, predictions: list, iou_type: str = "bbox") -> dict:
         coco_gt = COCO()
         coco_gt.dataset = gt_coco
         coco_gt.createIndex()
-        coco_dt = coco_gt.loadRes(predictions) if predictions else COCO()
+        if predictions:
+            coco_dt = coco_gt.loadRes(predictions)
+        else:
+            coco_dt = COCO()
+            coco_dt.dataset = {"images": gt_coco["images"],
+                               "categories": gt_coco["categories"], "annotations": []}
+            coco_dt.createIndex()
         coco_eval = COCOeval(coco_gt, coco_dt, iou_type)
         coco_eval.evaluate()
         coco_eval.accumulate()
@@ -172,6 +178,7 @@ def coco_map(gt_coco: dict, predictions: list, iou_type: str = "bbox") -> dict:
     names = {c["id"]: c["name"] for c in gt_coco["categories"]}
     per_category = {}
     for k, cat_id in enumerate(coco_eval.params.catIds):
+        cat_id = int(cat_id)  # COCOeval may return numpy integers; keep reports JSON-safe.
         p_all = precision[:, :, k, 0, -1]
         p_50 = precision[0, :, k, 0, -1]
         per_category[cat_id] = {
