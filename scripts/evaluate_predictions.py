@@ -468,6 +468,12 @@ def main() -> None:
         help="Chỉ đánh giá chất lượng Bounding Box (Class-agnostic), bỏ qua hoàn toàn nhãn class.",
     )
     parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Giới hạn số lượng ảnh đánh giá (0: toàn bộ ảnh có sẵn).",
+    )
+    parser.add_argument(
         "--allow-incomplete",
         action="store_true",
         help="Cho phép đánh giá trên tập ảnh hiện có dự đoán (hữu ích khi test với --limit).",
@@ -498,6 +504,13 @@ def main() -> None:
 
     raw_coco, ground_truth, category_names = load_ground_truth(annotation_path)
     predictions, page_seconds = load_predictions(predictions_dir)
+    if args.limit > 0:
+        sorted_ids = sorted(
+            predictions.keys(),
+            key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)),
+        )[: args.limit]
+        predictions = {k: predictions[k] for k in sorted_ids}
+        page_seconds = {k: page_seconds[k] for k in sorted_ids if k in page_seconds}
     missing_ids = set(ground_truth) - set(predictions)
     if missing_ids:
         if args.allow_incomplete:
