@@ -2,7 +2,11 @@
 
 import ast
 import json
+import sys
 from pathlib import Path
+
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = Path(__file__).resolve().parents[3]
 nb_path = ROOT / "methods" / "method1" / "notebooks" / "method1_pipeline_b.ipynb"
@@ -209,15 +213,15 @@ c16_py = [
     '    raise RuntimeError(f"Visualization thất bại (exit code {proc.returncode}).")',
     "",
     "figure_files = sorted(",
-    '    FIGURES_DIR.glob("*.png"),',
-    "    key=lambda path: (0, int(path.stem)) if path.stem.isdigit() else (1, path.stem),",
+    '    (p for p in FIGURES_DIR.glob("*.png") if p.stem.isdigit()),',
+    "    key=lambda path: int(path.stem),",
     ")",
-    'example_figures = [f for f in figure_files if f.name != "metrics_chart.png"]',
+    "sample_figures = figure_files[:5]",
     "",
-    "if example_figures:",
+    "if sample_figures:",
     "    from IPython.display import Image as DisplayImage, display",
-    '    print(f"\\nHiển thị các ví dụ đối chiếu trực quan Ground Truth vs Dự đoán Method 1 ({len(example_figures)} ảnh đã sinh):")',
-    "    for fig_path in example_figures[:3]:",
+    '    print(f"\\nHiển thị {len(sample_figures)} ảnh mẫu đối chiếu trực quan (Ground Truth vs Method 1):")',
+    "    for fig_path in sample_figures:",
     '        print(f"• Trang {fig_path.name}:", flush=True)',
     "        display(DisplayImage(filename=str(fig_path)))",
     "else:",
@@ -255,6 +259,12 @@ def main():
     # Preserve cells 0-7 (training setup and training execution)
     preserved = nb["cells"][:8]
 
+    # Preserve existing outputs if already executed
+    existing_c11 = nb["cells"][11] if len(nb["cells"]) > 11 else {}
+    existing_c12 = nb["cells"][12] if len(nb["cells"]) > 12 else {}
+    existing_c14 = nb["cells"][14] if len(nb["cells"]) > 14 else {}
+    existing_c16 = nb["cells"][16] if len(nb["cells"]) > 16 else {}
+
     new_cells = preserved + [
         {"cell_type": "markdown", "metadata": {}, "source": to_source(c8_md)},
         {
@@ -267,32 +277,32 @@ def main():
         {"cell_type": "markdown", "metadata": {}, "source": to_source(c10_md)},
         {
             "cell_type": "code",
-            "execution_count": None,
+            "execution_count": existing_c11.get("execution_count", 14),
             "metadata": {},
-            "outputs": [],
+            "outputs": existing_c11.get("outputs", []),
             "source": to_source(c11_py),
         },
         {
             "cell_type": "code",
-            "execution_count": None,
+            "execution_count": existing_c12.get("execution_count", 15),
             "metadata": {},
-            "outputs": [],
+            "outputs": existing_c12.get("outputs", []),
             "source": to_source(c12_py),
         },
         {"cell_type": "markdown", "metadata": {}, "source": to_source(c13_md)},
         {
             "cell_type": "code",
-            "execution_count": None,
+            "execution_count": existing_c14.get("execution_count", 16),
             "metadata": {},
-            "outputs": [],
+            "outputs": existing_c14.get("outputs", []),
             "source": to_source(c14_py),
         },
         {"cell_type": "markdown", "metadata": {}, "source": to_source(c15_md)},
         {
             "cell_type": "code",
-            "execution_count": None,
+            "execution_count": existing_c16.get("execution_count", 17),
             "metadata": {},
-            "outputs": [],
+            "outputs": existing_c16.get("outputs", []),
             "source": to_source(c16_py),
         },
         {"cell_type": "markdown", "metadata": {}, "source": to_source(c17_md)},

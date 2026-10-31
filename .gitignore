@@ -34,4 +34,7 @@ runs/
 .env
 .DS_Store
 Thumbs.db
-
+
+
+# Scratch files
+scratch/
