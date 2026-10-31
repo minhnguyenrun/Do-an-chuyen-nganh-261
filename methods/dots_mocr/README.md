@@ -11,6 +11,15 @@ Thư mục này chứa toàn bộ pipeline thực nghiệm mô hình **dots.mocr
   `Caption`, `Footnote`, `Formula`, `List-item`, `Page-footer`, `Page-header`, `Picture`, `Section-header`, `Table`, `Text`, `Title`.
 - **Định dạng tọa độ**: Tự động chuẩn hóa từ pixel `[x1, y1, x2, y2]` sang format chuẩn của benchmark `[x, y, w, h]`.
 
+### Cấu hình suy luận (khớp cấu hình chính thức của dots.mocr)
+
+- **Prompt**: `prompt_layout_only_en` (chỉ xuất bbox + nhãn, không xuất nội dung), danh sách nhãn là 11 lớp DocLayNet.
+- **Độ phân giải**: dùng mặc định của processor chính thức (`min_pixels=3136`, `max_pixels=11289600`, bội số 28), tức là ảnh DocLayNet 1025×1025 được đưa vào ở 1036×1036 mà không bị thu nhỏ. Tọa độ model sinh ra nằm trong không gian ảnh đã resize này và được quy đổi về ảnh gốc trong `parser.py`.
+- **EOS**: `[151643, 151645, 151672, 151673]` (hợp của `generation_config.json` của checkpoint và `<|im_end|>`), `max_new_tokens=2048` để trang dày (nhiều box) không bị cắt cụt.
+- **Batch size mặc định = 1**: trên GPU 8 GB, batch 4 chậm hơn ~3,5 lần (33,9s so với 9,6s/trang) do tràn VRAM; tăng `--batch-size` nếu dùng GPU lớn hơn.
+- Checkpoint `dots-studio/dots.mocr` dùng kiến trúc `DotsOCRForCausalLM` (`model_type: dots_ocr`), nên kiểm tra trọng số dựa trên `model_type` này.
+- Mô hình không trả về confidence nên mọi box có `score = 0.95` (mAP kiểu COCO không có ý nghĩa với phương pháp này).
+
 ---
 
 ## 2. Cấu trúc thư mục

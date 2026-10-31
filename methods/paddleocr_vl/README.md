@@ -1,6 +1,10 @@
-# PaddleOCR-VL / PP-DocLayout
+# PaddleOCR-VL (layout stage: PP-DocLayoutV2)
 
-Phương pháp phân tích layout tài liệu dùng [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) và bộ công cụ layout phân tích tài liệu tiên tiến **PP-DocLayout** (model mặc định: `PP-DocLayout_plus-L`).
+Phương pháp phân tích layout tài liệu **PaddleOCR-VL** của [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR).
+
+PaddleOCR-VL gồm hai tầng: **PP-DocLayoutV2** (phát hiện layout + thứ tự đọc) và **PaddleOCR-VL-0.9B** (nhận dạng nội dung từng khối). Bounding box chỉ do tầng layout tạo ra, nên `run_inference.py` chạy đúng tầng này và lấy **toàn bộ cấu hình từ pipeline chính thức** `PaddleOCR-VL.yaml` của PaddleX: model `PP-DocLayoutV2`, ngưỡng theo từng lớp, layout NMS, unclip ratio, chế độ merge box, và bước lọc box chồng lấn (`filter_overlap_boxes`) mà pipeline áp dụng ngay sau khi phát hiện. Tầng nhận dạng VLM không ảnh hưởng đến box nên được bỏ qua.
+
+> Trước đây code dùng `PP-DocLayout_plus-L`, là một model layout độc lập, **không phải** model của pipeline PaddleOCR-VL. Prediction cũ (không có trường `layout_model`) tự được chạy lại khi dùng `--skip-existing`. Có thể chọn phiên bản mới hơn của pipeline bằng `--pipeline PaddleOCR-VL-1.5` hoặc `PaddleOCR-VL-1.6` (dùng PP-DocLayoutV3).
 
 ## Cấu trúc
 
@@ -45,35 +49,48 @@ Hình đối chiếu lưu tại `outputs/reports/paddleocr_vl_doclaynet/<image_i
 
 ## Chiến lược Mapping nhãn (Taxonomy Mapping)
 
-Mô hình PP-DocLayout được huấn luyện trên bộ nhãn chi tiết gồm 20 lớp, trong khi tập dữ liệu benchmark DocLayNet có 11 lớp chuẩn. Script `run_inference.py` áp dụng quy tắc ánh xạ và lọc nhãn có căn cứ thực nghiệm như sau:
+Mô hình PP-DocLayoutV2 được huấn luyện trên bộ nhãn chi tiết gồm 25 lớp, trong khi tập dữ liệu benchmark DocLayNet có 11 lớp chuẩn. Script `run_inference.py` áp dụng quy tắc ánh xạ và lọc nhãn có căn cứ thực nghiệm như sau:
 
 ### 1. Bảng ánh xạ sang DocLayNet (11 lớp)
 
-| Nhãn PaddleOCR (PP-DocLayout) | Nhãn DocLayNet | ID | Ghi chú |
+| Nhãn PaddleOCR (PP-DocLayoutV2) | Nhãn DocLayNet | ID | Ghi chú |
 |---|---|---:|---|
 | `table` | `Table` | 9 | Khớp trực tiếp bảng biểu |
-| `formula` | `Formula` | 3 | Công thức toán học (inline & display) |
+| `display_formula` | `Formula` | 3 | Công thức dạng khối (display). `inline_formula` bị loại vì thuộc khối Text |
 | `footnote` | `Footnote` | 2 | Ghi chú chân trang |
 | `image`, `chart` | `Picture` | 7 | Hình ảnh, biểu đồ, sơ đồ |
 | `paragraph_title` | `Section-header` | 8 | Tiêu đề mục, đề mục đoạn |
 | `doc_title` | `Title` | 11 | Tiêu đề chính của tài liệu |
-| `figure_title`, `table_title`, `chart_title` | `Caption` | 1 | Chú thích hình ảnh và bảng biểu |
+| `figure_title`, `vision_footnote` | `Caption` | 1 | Chú thích hình ảnh, bảng biểu, biểu đồ. `vision_footnote` (văn bản gắn với hình/bảng) được DocLayNet gán là Caption |
+| `number` | `Page-footer` (nửa dưới trang) / `Page-header` (nửa trên) | 5 / 6 | Số trang rời; DocLayNet gán số trang vào chân/đầu trang |
 | `header`, `header_image` | `Page-header` | 6 | Tiêu đề đầu trang (running header) |
 | `footer`, `footer_image` | `Page-footer` | 5 | Tiêu đề chân trang (running footer) |
-| `text`, `abstract`, `content`, `reference`, `reference_content`, `aside_text`, `algorithm` | `Text` | 10 | Các khối văn bản đoạn văn, tóm tắt, mục lục, trích dẫn tài liệu, ghi chú bên lề |
+| `text`, `vertical_text`, `abstract`, `content`, `reference`, `reference_content`, `aside_text`, `algorithm` | `Text` | 10 | Các khối văn bản đoạn văn, tóm tắt, mục lục, trích dẫn tài liệu, ghi chú bên lề |
 
 *(DocLayNet có nhãn `List-item` (4), tuy nhiên các model họ DocLayout thường nhận diện từng dòng list dưới dạng khối `text` hoặc `content`)*.
 
-### 2. Nhãn loại bỏ (`DEFAULT_DROP_LABELS`)
+### 2. Hai quyết định ánh xạ chọn trên tập validation
 
-Qua phân tích và thực nghiệm so khớp IoU trên dữ liệu thực tế, các nhãn sau được loại bỏ mặc định:
+PP-DocLayoutV2 có hai nhãn không có tương ứng 1-1 trong DocLayNet. Hai cách ánh xạ dưới đây được chọn bằng cách so 6 phương án trên **400 trang đầu của DocLayNet validation** (không dùng tập test để chọn), rồi xác nhận lại trên 300 trang đầu của test; kết quả cùng chiều:
+
+| Phương án (Strict, IoU ≥ 0.5) | F1 validation | F1 test (300 trang) |
+|---|---:|---:|
+| Loại bỏ `number`, `vision_footnote` → Footnote (cấu hình cũ) | 0.670 | 0.684 |
+| `number` → Page-footer/Page-header theo vị trí y | 0.684 | 0.690 |
+| `vision_footnote` → Caption | 0.681 | 0.697 |
+| **Cả hai (đang dùng)** | **0.694** | **0.702** |
+
+Page-footer F1 trên validation tăng 0.29 → 0.60 và Caption F1 0.01 → 0.29. (Kết luận cũ "80% box `number` là false positive" đo trên model `PP-DocLayout_plus-L`, không còn đúng với PP-DocLayoutV2.) Dùng `--no-page-number-mapping` để quay lại cách loại bỏ `number`. Prediction có trường `mapping_version` khác phiên bản hiện tại sẽ được chạy lại.
+
+### 3. Nhãn loại bỏ (`DEFAULT_DROP_LABELS`)
+
+Các nhãn sau được loại bỏ mặc định:
 - **`seal`** (con dấu): Đặc thù tài liệu/hợp đồng tiếng Trung, không có trong taxonomy DocLayNet.
 - **`formula_number`**: Nhãn đánh số phương trình (vd: `(1)`), trong DocLayNet được gộp chung vào box `Formula` hoặc `Text`. Tách riêng sinh box trùng lặp.
-- **`number`**: Các số rời rạc (số trang, chỉ mục). Kiểm chứng thực nghiệm cho thấy **80% box `number` không có GT tương ứng** (false positive).
-- **Hiệu quả thực nghiệm**: Khi loại bỏ 3 nhãn này, **Precision tăng từ 0.693 lên 0.740 (+4.7%)** và **F1 tăng từ 0.741 lên 0.767 (+2.6%)**, trong khi số True Positives giữ nguyên 100% (không làm giảm Recall).
+- **`inline_formula`**: Công thức nằm trong dòng chữ, thuộc khối `Text` trong DocLayNet.
 - Người dùng có thể truyền flag `--keep-all` vào `run_inference.py` nếu muốn giữ lại toàn bộ nhãn với `category_id = None`.
 
-### 3. Ánh xạ sang PubLayNet (5 lớp)
+### 4. Ánh xạ sang PubLayNet (5 lớp)
 
 - `Text` (1): `text`, `abstract`, `content`, `reference`, `aside_text`, `footnote`, `header`, `footer`, `algorithm`
 - `Title` (2): `doc_title`, `paragraph_title`

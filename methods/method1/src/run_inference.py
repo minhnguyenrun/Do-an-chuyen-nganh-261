@@ -32,6 +32,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from methods.method1.src.pipeline_b.pipeline import DocumentLayoutFullPipeline
 from src.common.profiling import ResourceMonitor, save_runtime_summary
+from src.common.splits import apply_split, describe, SPLITS
 
 
 def is_current_prediction(path: Path) -> bool:
@@ -55,6 +56,12 @@ def main() -> None:
         "--dataset",
         default="doclaynet_test",
         help="Dataset name (e.g. doclaynet_test, doclaynet, publaynet)",
+    )
+    parser.add_argument(
+        "--split",
+        default=None,
+        choices=sorted(SPLITS) + ["val", "validation"],
+        help="Tap du lieu DocLayNet: train / valid / test (thay cho --dataset).",
     )
     parser.add_argument(
         "--limit",
@@ -108,6 +115,8 @@ def main() -> None:
     parser.set_defaults(skip_existing=True)
 
     args = parser.parse_args()
+    args.dataset = apply_split(args.dataset, args.split)
+    print(f"[method1] Tap du lieu: {describe(args.dataset)}", flush=True)
 
     # Xác định đường dẫn weights
     weights_dir = ROOT_DIR / "methods" / "method1" / "weights"

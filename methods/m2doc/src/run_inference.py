@@ -47,6 +47,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from ocr_provider import OCRProvider
 from src.common.profiling import ResourceMonitor, save_runtime_summary
+from src.common.splits import apply_split, describe, SPLITS
 
 M2DOC_CLASSES = (
     "Caption",
@@ -340,6 +341,12 @@ def is_current_prediction(path: Path, mapping: Dict[str, int]) -> bool:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="doclaynet", help="Dataset name (doclaynet, doclaynet_val, doclaynet_test, or publaynet)")
+    parser.add_argument(
+        "--split",
+        default=None,
+        choices=sorted(SPLITS) + ["val", "validation"],
+        help="Tap du lieu DocLayNet: train / valid / test (thay cho --dataset doclaynet / doclaynet_val / doclaynet_test).",
+    )
     parser.add_argument("--threshold", type=float, default=0.3, help="Confidence score threshold (default: 0.3)")
     parser.add_argument(
         "--limit",
@@ -389,6 +396,8 @@ def main():
     parser.set_defaults(skip_existing=True)
 
     args = parser.parse_args()
+    args.dataset = apply_split(args.dataset, args.split)
+    print(f"[m2doc] Tap du lieu: {describe(args.dataset)}", flush=True)
 
     images_dir = ROOT_DIR / "datasets" / args.dataset / "processed" / "images"
     if not images_dir.is_dir():

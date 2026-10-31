@@ -26,13 +26,21 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
         pass
 
 from src.common.metrics import (  # noqa: E402
+    BACKGROUND,
+    GT_FATES,
+    PRED_FATES,
     coco_map,
+    equivalent_jitter_px,
+    error_analysis,
+    error_analysis_multi_iou,
+    jitter_ceiling,
     evaluate,
     evaluate_boxes,
     evaluate_boxes_multi_iou,
     coco_box_map,
 )
 from src.common.profiling import load_runtime_runs, page_time_stats  # noqa: E402
+from src.common.splits import SPLITS, normalize_split, resolve, split_of_dataset  # noqa: E402
 
 
 def load_ground_truth(annotation_path: Path) -> tuple[dict, dict, dict]:
@@ -131,6 +139,210 @@ def print_report(result: dict, category_names: dict, title: str) -> None:
             f"{name:<18}{metrics['support']:>8}{pred_count:>8}{metrics['tp']:>7}"
             f"{metrics['fp']:>7}{metrics['fn']:>7}{metrics['precision']:>9.3f}"
             f"{metrics['recall']:>9.3f}{metrics['f1']:>9.3f}"
+        )
+
+
+GT_FATE_LABELS = {
+    "correct": "Đúng", "cls_wrong": "SaiNhãn", "loc": "Lệch", "both": "Lệch+Sai",
+    "split": "BịTách", "merged": "BịGộp", "complex": "PhứcTạp", "missed": "BỏSót",
+}
+PRED_FATE_LABELS = {
+    "correct": "Đúng", "cls_wrong": "SaiNhãn", "loc": "Lệch", "both": "Lệch+Sai",
+    "duplicate": "Trùng", "split_fragment": "MảnhTách", "merge_box": "BoxGộp",
+    "complex": "PhứcTạp", "background": "Thừa",
+}
+
+
+def _pct(x: float) -> str:
+    return f"{x * 100:6.2f}%"
+
+
+def print_error_analysis(result: dict, category_names: dict, title: str) -> None:
+    """In báo cáo 2 giai đoạn + tách/gộp + bảng theo lớp + confusion matrix."""
+    o = result["overall"]
+    print(f"\n{'=' * 100}")
+    print(f" {title}")
+    print(
+        f" IoU >= {o['iou_threshold']} | IoA tách/gộp >= {o['ioa_threshold']} | "
+        f"IoU background < {o['bg_iou_threshold']} | phủ tối thiểu khi tách >= {o['min_split_coverage']}"
+    )
+    print(f" GT={o['n_gt']:,} box | Pred={o['n_pred']:,} box | Pred/GT={o['pred_gt_ratio']:.3f}")
+    print(f"{'=' * 100}")
+
+    print("\n[Giai đoạn 1 – Detection (bỏ qua nhãn, khớp 1-1)]")
+    print(
+        f"  Det-TP={o['det_tp']:,}  Det-FP={o['det_fp']:,}  Det-FN={o['det_fn']:,}  |  "
+        f"Det-P={_pct(o['det_precision'])}  Det-R={_pct(o['det_recall'])}  Det-F1={o['det_f1']:.4f}"
+    )
+    print(
+        f"  IoU các cặp khớp: mean={o['iou_mean']:.3f}  median={o['iou_median']:.3f}  "
+        f"P10={o['iou_p10']:.3f}  ≥0.75: {_pct(o['iou_ge_075'])}  ≥0.95: {_pct(o['iou_ge_095'])}"
+    )
+
+    print("\n[Giai đoạn 2 – Classification (trên các box Det-TP)]")
+    print(
+        f"  Gán nhãn đúng={o['cls_correct']:,}  Gán nhãn sai={o['cls_wrong']:,}  "
+        f"Cls-Accuracy={_pct(o['cls_accuracy'])}"
+    )
+
+    print("\n[End-to-end (đúng vị trí và đúng nhãn)]")
+    print(
+        f"  E2E-P={_pct(o['e2e_precision'])}  E2E-R={_pct(o['e2e_recall'])}  E2E-F1={o['e2e_f1']:.4f}  "
+        f"(E2E-R = Det-R × Cls-Acc = {o['det_recall']:.4f} × {o['cls_accuracy']:.4f})"
+    )
+
+    s, m, c = o["split"], o["merge"], o["complex"]
+    print("\n[Tách / Gộp]")
+    print(
+        f"  Tách : {s['gt']:,} GT bị tách thành {s['fragments']:,} mảnh "
+        f"(TB {s['mean_fragments']:.2f} mảnh/GT) | Split rate={_pct(s['rate'])}"
+    )
+    print(
+        f"  Gộp  : {m['boxes']:,} box gộp chứa {m['gt']:,} GT "
+        f"(TB {m['mean_gt_per_box']:.2f} GT/box) | Merge rate={_pct(m['rate'])} | "
+        f"cùng lớp={m['same_class']:,}  khác lớp={m['cross_class']:,}"
+    )
+    print(f"  Phức tạp (m GT – n pred): {c['groups']:,} nhóm, {c['gt']:,} GT, {c['pred']:,} pred")
+    if result["merge_combos"]:
+        print("  Các tổ hợp lớp bị gộp nhiều nhất:")
+        for combo, count in result["merge_combos"].most_common(8):
+            print(f"    {' + '.join(combo):<45}{count:>7,}")
+
+    print("\n[Bảng A – Số phận GT theo lớp (mỗi hàng cộng lại = #GT)]")
+    header = f"{'Lớp GT':<18}{'#GT':>8}" + "".join(f"{GT_FATE_LABELS[f]:>10}" for f in GT_FATES)
+    print(header + f"{'Mảnh':>8}{'Det-R':>9}{'Cls-Acc':>9}{'E2E-R':>9}")
+    rows = sorted(result["per_gt_class"].values(), key=lambda r: -r["gt"])
+    for r in rows:
+        print(
+            f"{r['name']:<18}{r['gt']:>8,}" + "".join(f"{r[f]:>10,}" for f in GT_FATES)
+            + f"{r['split_fragments']:>8,}{r['det_recall']:>9.3f}{r['cls_accuracy']:>9.3f}{r['e2e_recall']:>9.3f}"
+        )
+    gf = o["gt_fates"]
+    print(
+        f"{'TỔNG':<18}{o['n_gt']:>8,}" + "".join(f"{gf[f]:>10,}" for f in GT_FATES)
+        + f"{s['fragments']:>8,}{o['det_recall']:>9.3f}{o['cls_accuracy']:>9.3f}{o['e2e_recall']:>9.3f}"
+    )
+    print("  (Mảnh = tổng số pred mà các GT bị tách của lớp đó bị chia thành)")
+
+    print("\n[Bảng B – Nguồn gốc Pred theo lớp dự đoán (mỗi hàng cộng lại = #Pred)]")
+    header = f"{'Lớp Pred':<18}{'#Pred':>8}" + "".join(f"{PRED_FATE_LABELS[f]:>10}" for f in PRED_FATES)
+    print(header + f"{'GTgộp':>8}{'Det-P':>9}{'E2E-P':>9}")
+    rows = sorted(result["per_pred_class"].values(), key=lambda r: -r["pred"])
+    for r in rows:
+        print(
+            f"{r['name']:<18}{r['pred']:>8,}" + "".join(f"{r[f]:>10,}" for f in PRED_FATES)
+            + f"{r['merged_gt']:>8,}{r['det_precision']:>9.3f}{r['e2e_precision']:>9.3f}"
+        )
+    pf = o["pred_fates"]
+    print(
+        f"{'TỔNG':<18}{o['n_pred']:>8,}" + "".join(f"{pf[f]:>10,}" for f in PRED_FATES)
+        + f"{m['gt']:>8,}{o['det_precision']:>9.3f}{o['e2e_precision']:>9.3f}"
+    )
+    print("  (GTgộp = số GT bị nuốt vào các box gộp mang nhãn này)")
+
+    print_confusion(result, category_names)
+
+    pages = o["pages"]
+    print("\n[Theo trang]")
+    print(
+        f"  Trang hoàn hảo (mọi GT và pred đều 'Đúng'): {pages['perfect']:,}/{pages['images']:,} "
+        f"= {_pct(pages['perfect_rate'])}"
+    )
+    print(
+        f"  TB mỗi trang: {pages['mean_gt_errors']:.2f} GT không đúng, "
+        f"{pages['mean_pred_errors']:.2f} pred không đúng"
+    )
+
+
+def print_confusion(result: dict, category_names: dict) -> None:
+    confusion = result["confusion"]
+    cats = sorted(category_names)
+    extra = sorted(
+        {p for (_, p) in confusion if p != BACKGROUND and p not in category_names},
+        key=str,
+    )
+    cols = cats + extra + [BACKGROUND]
+    rows = cats + [BACKGROUND]
+    names = {**category_names, BACKGROUND: "background", None: "(outside taxonomy)"}
+    label = {c: (str(i) if c != BACKGROUND else "BG") for i, c in enumerate(cats + extra)}
+    label[BACKGROUND] = "BG"
+
+    print("\n[Bảng C – Confusion matrix (hàng = nhãn GT, cột = nhãn pred; chỉ trên cặp Det-TP;")
+    print("  cột BG = GT bị bỏ sót, hàng BG = pred thừa; các fate khác không nằm trong bảng)]")
+    print("  " + "  ".join(f"{label[c]}={names.get(c, str(c))}" for c in cats + extra))
+    width = max(7, max((len(f"{v:,}") for v in confusion.values()), default=0) + 2)
+    corner = "GT \\ Pred"
+    print(f"{corner:<20}" + "".join(f"{label[c]:>{width}}" for c in cols))
+    for r in rows:
+        name = f"{label[r]} {names.get(r, str(r))}"[:19]
+        print(f"{name:<20}" + "".join(
+            f"{confusion.get((r, c), 0):>{width},}" if (r, c) != (BACKGROUND, BACKGROUND) else f"{'-':>{width}}"
+            for c in cols
+        ))
+
+    wrong = [((g, p), n) for (g, p), n in confusion.items()
+             if BACKGROUND not in (g, p) and g != p]
+    if wrong:
+        print("  Các cặp nhầm nhãn nhiều nhất (GT → Pred):")
+        for (g, p), n in sorted(wrong, key=lambda item: -item[1])[:10]:
+            print(f"    {names.get(g, str(g)):<18} → {names.get(p, str(p)):<18}{n:>7,}")
+
+
+def _fmt_px(value: float) -> str:
+    if value == float("inf"):
+        return "rất lớn"
+    return f"{value:.1f}px" if value > 0 else "<0.5px"
+
+
+def print_localization_reference(result: dict, ceiling: dict) -> None:
+    """In thang đo tham chiếu: kết quả ở ngưỡng IoU này là cao hay thấp."""
+    o = result["overall"]
+    pixels = ceiling["pixels"]
+    show = [k for k in (1, 2, 3, 5) if k in pixels]
+    tau = o["iou_threshold"]
+
+    print(f"\n[Thang đo tham chiếu độ khít box ở IoU ≥ {tau}]")
+    print("  Dung sai   = số px mỗi cạnh được lệch mà IoU vẫn ≥ ngưỡng (trung vị trên các GT của lớp)")
+    print("  Lệch biên  = sai lệch trung bình 4 cạnh giữa pred và GT (px), trên các box đã tìm thấy (IoU ≥ 0.5)")
+    print(f"  Đạt        = trong các box đã tìm thấy, tỉ lệ đạt IoU ≥ {tau} (chỉ đo độ khít, không tính gộp/tách/sót)")
+    print(f"  Trần ±k    = tỉ lệ đạt IoU ≥ {tau} nếu lấy chính GT rồi lệch ngẫu nhiên mỗi cạnh trong ±k px")
+    print("  Tương đương = model khít ngang với GT bị lệch ±k px mỗi cạnh (càng nhỏ càng tốt)")
+    print(
+        f"{'Lớp GT':<18}{'#Cặp':>8}{'Dung sai':>10}{'Lệch biên':>11}{'P90':>8}{'≤1px':>8}{'≤2px':>8}{'Đạt':>8}"
+        + "".join(f"{'Trần±' + str(k):>9}" for k in show) + f"{'Tương đương':>13}"
+    )
+
+    def row(name, stats, curve):
+        equivalent = equivalent_jitter_px(stats["loc_pass_rate"], pixels, curve)
+        print(
+            f"{name:<18}{stats['loc_pairs']:>8,}{stats['tolerance_median']:>9.2f}px"
+            f"{stats['edge_err_median']:>9.2f}px{stats['edge_err_p90']:>6.1f}px"
+            f"{stats['edge_err_le_1px'] * 100:>7.1f}%{stats['edge_err_le_2px'] * 100:>7.1f}%"
+            f"{stats['loc_pass_rate'] * 100:>7.1f}%"
+            + "".join(f"{curve[pixels.index(k)] * 100:>8.1f}%" for k in show)
+            + f"{_fmt_px(equivalent):>13}"
+        )
+
+    for cat_id, stats in sorted(result["per_gt_class"].items(), key=lambda item: -item[1]["gt"]):
+        if cat_id in ceiling["per_class"]:
+            row(stats["name"], stats, ceiling["per_class"][cat_id])
+    row("TỔNG", o, ceiling["overall"])
+
+
+def print_error_analysis_multi_iou(results: list[dict]) -> None:
+    print("\n[Tóm tắt theo ngưỡng IoU]")
+    print(
+        f"{'IoU':<7}{'Det-P':>9}{'Det-R':>9}{'Det-F1':>9}{'Cls-Acc':>9}{'E2E-P':>9}{'E2E-R':>9}"
+        f"{'E2E-F1':>9}{'Lệch':>8}{'BịTách':>8}{'BịGộp':>8}{'BỏSót':>8}{'Thừa':>8}{'Hoàn hảo':>10}"
+    )
+    for r in results:
+        o = r["overall"]
+        print(
+            f"≥{o['iou_threshold']:<6.2f}{o['det_precision']:>9.3f}{o['det_recall']:>9.3f}{o['det_f1']:>9.3f}"
+            f"{o['cls_accuracy']:>9.3f}{o['e2e_precision']:>9.3f}{o['e2e_recall']:>9.3f}{o['e2e_f1']:>9.3f}"
+            f"{o['gt_fates']['loc'] + o['gt_fates']['both']:>8,}{o['gt_fates']['split']:>8,}"
+            f"{o['gt_fates']['merged']:>8,}{o['gt_fates']['missed']:>8,}{o['pred_fates']['background']:>8,}"
+            f"{o['pages']['perfect_rate'] * 100:>9.2f}%"
         )
 
 
@@ -454,8 +666,18 @@ def run_coco_box_map(raw_coco: dict, predictions: dict, evaluated_image_ids: set
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--method", default="docling")
-    parser.add_argument("--dataset", default="doclaynet")
-    parser.add_argument("--split", default="train")
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Ten dataset (doclaynet / doclaynet_val / doclaynet_test / docbank ...). "
+             "Bo trong de suy ra tu --split.",
+    )
+    parser.add_argument(
+        "--split",
+        default="train",
+        help="Tap danh gia: train / valid (val, validation) / test. Voi dataset DocLayNet, "
+             "ten dataset va file annotation duoc suy ra tu day; voi dataset khac la ten file annotation.",
+    )
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument(
         "--loose",
@@ -478,6 +700,41 @@ def main() -> None:
         help="Không tính mAP kiểu COCO.",
     )
     parser.add_argument(
+        "--no-error-analysis",
+        action="store_true",
+        help="Không in phân tích lỗi 2 giai đoạn (detection/classification, tách/gộp, bảng theo lớp).",
+    )
+    parser.add_argument(
+        "--error-iou-threshold",
+        type=float,
+        default=0.95,
+        help="Ngưỡng IoU để một box được tính là 'Đúng' trong phân tích lỗi (độc lập với --iou-threshold "
+             "của báo cáo Strict). IoU giữa --bg-iou-threshold và ngưỡng này được tính là 'Lệch'.",
+    )
+    parser.add_argument(
+        "--ioa-threshold",
+        type=float,
+        default=0.8,
+        help="Ngưỡng IoA (intersection / diện tích box nhỏ) để coi một box nằm trong box kia khi xét tách/gộp.",
+    )
+    parser.add_argument(
+        "--bg-iou-threshold",
+        type=float,
+        default=0.1,
+        help="Pred có IoU nhỏ hơn ngưỡng này với mọi GT được tính là background (thừa).",
+    )
+    parser.add_argument(
+        "--min-split-coverage",
+        type=float,
+        default=0.5,
+        help="Các mảnh phải phủ ít nhất tỉ lệ này diện tích GT mới tính là GT bị tách.",
+    )
+    parser.add_argument(
+        "--error-iou-thresholds",
+        default="0.5,0.75,0.95",
+        help="Các ngưỡng IoU cho bảng tóm tắt phân tích lỗi, phân tách bằng dấu phẩy.",
+    )
+    parser.add_argument(
         "--plot",
         nargs="?",
         const="default",
@@ -485,6 +742,27 @@ def main() -> None:
         help="Lưu biểu đồ đánh giá ra file ảnh (mặc định: outputs/reports/<method>_<dataset>/metrics_chart.png).",
     )
     args = parser.parse_args()
+
+    # Chon tap train / valid / test mot cach tuong minh va chan viec tron lan giua cac tap.
+    if args.dataset is None or split_of_dataset(args.dataset):
+        try:
+            info = resolve(args.split)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        if args.dataset is not None and args.dataset != info.dataset:
+            raise SystemExit(
+                f"--dataset {args.dataset} thuoc tap '{split_of_dataset(args.dataset)}' nhung --split la '{info.name}'. "
+                f"Dung --split {split_of_dataset(args.dataset)} (hoac bo --dataset) de khong tron lan cac tap."
+            )
+        args.dataset, args.split = info.dataset, info.annotation
+    split_name = split_of_dataset(args.dataset)
+    if split_name:
+        banner = f"TAP DANH GIA: {split_name.upper()} ({args.dataset}) - {SPLITS[split_name].purpose}"
+        print(banner)
+        if split_name == "train":
+            print("[warn] Dang danh gia tren tap TRAIN: model co the da hoc du lieu nay, khong dung de bao cao ket qua.")
+        elif split_name == "test":
+            print("[note] Tap TEST chi de bao cao cuoi cung; chon nguong / cach map nhan tren tap valid.")
 
     annotation_path = (
         ROOT_DIR
@@ -508,6 +786,12 @@ def main() -> None:
                 f"Incomplete predictions: {len(missing_ids)} of {len(ground_truth)} "
                 f"ground-truth images are missing (e.g. {examples}). Run inference first (hoặc dùng --allow-incomplete)."
             )
+
+    if not ground_truth:
+        raise SystemExit(
+            f"Chua co prediction nao cua {args.method} cho tap {args.dataset}. "
+            f"Chay inference truoc: python methods/{args.method}/src/run_inference.py --split {split_name or args.split}"
+        )
 
     # Chi danh gia du doan tren dung tap anh cua GT (cung split); du doan tren
     # anh ngoai tap nay khong thuoc phep do nen bo ra, kem canh bao.
@@ -584,6 +868,31 @@ def main() -> None:
         )
         loose["pred_counts"] = pred_counts
         print_report(loose, category_names, "Localization-only (class ignored)")
+
+    if not args.no_error_analysis:
+        analysis_kwargs = {
+            "ioa_threshold": args.ioa_threshold,
+            "bg_iou_threshold": args.bg_iou_threshold,
+            "min_split_coverage": args.min_split_coverage,
+        }
+        analysis = error_analysis(
+            ground_truth, predictions, category_names, args.error_iou_threshold, **analysis_kwargs
+        )
+        print_error_analysis(
+            analysis,
+            category_names,
+            "PHÂN TÍCH LỖI 2 GIAI ĐOẠN: DETECTION → CLASSIFICATION, TÁCH / GỘP BOX",
+        )
+        print_localization_reference(
+            analysis, jitter_ceiling(ground_truth, args.error_iou_threshold)
+        )
+        thresholds = [float(t) for t in args.error_iou_thresholds.split(",") if t.strip()]
+        if thresholds:
+            print_error_analysis_multi_iou(
+                error_analysis_multi_iou(
+                    ground_truth, predictions, category_names, thresholds, **analysis_kwargs
+                )
+            )
 
     if args.plot:
         if args.plot == "default":

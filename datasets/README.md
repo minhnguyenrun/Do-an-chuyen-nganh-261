@@ -20,6 +20,8 @@ datasets/
     └── processed/    # ảnh (.jpg) + annotation (COCO-style .json) của phần đã tải
 ```
 
+> Quy ước dùng 3 tập (`train` / `valid` / `test`) và tùy chọn `--split` của mọi script: xem [README gốc](../README.md#quy-ước-3-tập-train--valid--test). Hiện máy này **chưa có tập `train`** (`datasets/doclaynet`); tải bằng `download_doclaynet.py --splits train --max-images N --delete-raw`.
+
 ## Nguồn dữ liệu
 
 - **DocLayNet** — `docling-project/DocLayNet-v1.2` trên HuggingFace Hub
@@ -86,6 +88,17 @@ không ghi đè lên nhau. Chạy method / đánh giá trên tập test:
   | train | `doclaynet` | 69,375 | 941,123 | `datasets/doclaynet/processed/annotations/train.json` |
   | validation | `doclaynet_val` | 6,489 | 99,816 | `datasets/doclaynet_val/processed/annotations/validation.json` |
   | test | `doclaynet_test` | 4,999 | 66,531 | `datasets/doclaynet_test/processed/annotations/test.json` |
+- **Bản đang có trên máy này** (ảnh nằm local, không push git):
+
+  | Dataset | Ảnh | Box | Cách tải |
+  |---|---:|---:|---|
+  | `doclaynet_test` | 4,999 (đủ split test) | 66,531 | `download_doclaynet.py --splits test --all --delete-raw` |
+  | `doclaynet_val` | **6,000** (6.000 ảnh đầu của split validation, thiếu 489 so với 6,489) | 93,003 | `download_doclaynet.py --splits validation --max-images 6000 --all --delete-raw` |
+
+  Hai shard cuối của validation chỉ trích phần cần thiết (`--max-images`); chạy lại
+  lệnh trên với `--max-images` lớn hơn để lấy thêm. Cột `pdf_cells` (box + text của
+  từng trang, cần cho M2Doc) được tải riêng vào `datasets/doclaynet/raw/data/` bởi
+  `methods/m2doc/src/ocr_provider.py` khi chạy M2Doc.
 - **PubLayNet**: chưa tải (dùng `download_publaynet.py` khi cần).
 - **DocBank**: đã stream ~1GB đầu của `DocBank_500K_ori_img.zip.001` từ
   `liminghao1630/DocBank`, được **9908 ảnh** (`.jpg`) và **131838 bounding box**

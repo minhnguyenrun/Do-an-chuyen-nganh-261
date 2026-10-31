@@ -42,19 +42,23 @@ class OCRProvider:
         self._rapid_ocr = None
         self._rapid_ocr_failed = False
 
+    # Number of parquet shards of docling-project/DocLayNet-v1.2 per split (train is too large to auto-download).
+    SPLIT_SHARDS = {"test": 6, "validation": 7}
+
     def _ensure_split_parquet_shards(self):
         """Ensures raw parquet shards for the target DocLayNet split are present so pdf_cells can be loaded."""
-        if not self.split_prefix:
+        num_shards = self.SPLIT_SHARDS.get(self.split_prefix or "")
+        if not num_shards:
             return
         existing = list(self.raw_data_dir.glob(f"{self.split_prefix}-*.parquet"))
-        if self.split_prefix == "test" and len(existing) < 6:
+        if len(existing) < num_shards:
             try:
                 from huggingface_hub import hf_hub_download
 
                 raw_root = self.raw_data_dir.parent
                 raw_root.mkdir(parents=True, exist_ok=True)
-                for i in range(6):
-                    rfilename = f"data/test-{i:05d}-of-00006.parquet"
+                for i in range(num_shards):
+                    rfilename = f"data/{self.split_prefix}-{i:05d}-of-{num_shards:05d}.parquet"
                     if not (raw_root / rfilename).exists():
                         print(f"[OCRProvider] Downloading {rfilename} for ground-truth pdf_cells...", flush=True)
                         hf_hub_download(
@@ -64,7 +68,7 @@ class OCRProvider:
                             local_dir=str(raw_root),
                         )
             except Exception as e:
-                print(f"[OCRProvider] Notice: could not auto-download test parquet shards: {e}", flush=True)
+                print(f"[OCRProvider] Notice: could not auto-download {self.split_prefix} parquet shards: {e}", flush=True)
 
     def _build_parquet_index(self):
         """Indexes available parquet files matching the current dataset split to map image_id to pdf_cells."""

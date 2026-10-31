@@ -43,6 +43,8 @@ Cài đặt các gói phụ thuộc:
 pip install -r methods/chandra/requirements.txt
 ```
 
+> **Lưu ý môi trường**: `datalab-to/chandra-ocr-2` có kiến trúc `Qwen3_5ForConditionalGeneration` nên cần **`transformers>=5.2`**, trong khi các phương pháp dots.ocr / dots.mocr dùng `transformers==4.49`. Chandra phải chạy trong một môi trường riêng (trên máy này: `D:\DLA\chandra_env`, kernel Jupyter `chandra_env`). Checkpoint 10,6 GB (bf16) không vừa GPU 8 GB nên chạy với `--load-in-4bit` (bitsandbytes NF4).
+
 ---
 
 ## 4. Chạy suy luận (Inference)
