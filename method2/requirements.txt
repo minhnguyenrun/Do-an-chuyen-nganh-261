@@ -1,0 +1,7 @@
+pydantic>=2.7,<3
+numpy>=1.26,<3
+opencv-python>=4.8,<5
+shapely>=2,<3
+PyYAML>=6,<7
+Pillow>=10,<13
+pytest>=8,<10

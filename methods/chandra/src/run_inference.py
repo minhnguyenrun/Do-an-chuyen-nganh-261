@@ -34,7 +34,12 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from parser import parse_chandra_layout_response
+from src.common.profiling import ResourceMonitor, save_runtime_summary
+from src.common.splits import apply_split, describe, SPLITS
 
 DEFAULT_MODEL_ID = "datalab-to/chandra-ocr-2"
 
@@ -215,8 +220,24 @@ def run_on_image(
 
     inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
 
+    # The checkpoint's generation_config only lists <|endoftext|> (248044) as EOS, but a chat turn ends with
+    # <|im_end|> (248046, the tokenizer's eos_token). Without it the model keeps generating after the page is
+    # done (it repeats the whole layout until max_new_tokens), so stop on both.
+    tokenizer = getattr(processor, "tokenizer", processor)
+    eos_ids = sorted(
+        {
+            token_id
+            for token_id in (
+                tokenizer.eos_token_id,
+                tokenizer.convert_tokens_to_ids("<|endoftext|>"),
+                tokenizer.convert_tokens_to_ids("<|im_end|>"),
+            )
+            if isinstance(token_id, int) and token_id >= 0
+        }
+    )
+
     with torch.no_grad():
-        generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
+        generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, eos_token_id=eos_ids)
 
     in_len = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
     out_ids = generated_ids[0][in_len:]
@@ -247,6 +268,12 @@ def run_on_image(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="doclaynet", help="Dataset name (doclaynet or publaynet)")
+    parser.add_argument(
+        "--split",
+        default=None,
+        choices=sorted(SPLITS) + ["val", "validation"],
+        help="Tap du lieu DocLayNet: train / valid / test (thay cho --dataset doclaynet / doclaynet_val / doclaynet_test).",
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -305,6 +332,8 @@ def main():
     )
     parser.set_defaults(skip_existing=True)
     args = parser.parse_args()
+    args.dataset = apply_split(args.dataset, args.split)
+    print(f"[chandra] Tap du lieu: {describe(args.dataset)}", flush=True)
 
     # Standard images directory
     images_dir = ROOT_DIR / "datasets" / args.dataset / "processed" / "images"
@@ -355,32 +384,34 @@ def main():
         model_target = args.weights
 
     # Load Model
-    start_load = time.time()
-    model, processor = load_chandra_model(
-        model_target,
-        device=args.device,
-        load_in_4bit=args.load_in_4bit,
-    )
-    print(f"[chandra] Model loaded successfully in {time.time() - start_load:.2f}s")
+    monitor = ResourceMonitor()
+    with monitor.time_model_load():
+        model, processor = load_chandra_model(
+            model_target,
+            device=args.device,
+            load_in_4bit=args.load_in_4bit,
+        )
+    print(f"[chandra] Model loaded successfully in {monitor.model_load_seconds:.2f}s", flush=True)
 
     # Run inference loop
     success_count = 0
     total_seconds = 0.0
 
     for i, img_path in enumerate(image_paths, start=1):
-        started = time.time()
         try:
-            res = run_on_image(
-                model=model,
-                processor=processor,
-                image_path=img_path,
-                device=args.device,
-                max_new_tokens=args.max_new_tokens,
-                dataset=args.dataset,
-                debug=args.debug,
-            )
-            elapsed = time.time() - started
+            with monitor.time_page() as timer:
+                res = run_on_image(
+                    model=model,
+                    processor=processor,
+                    image_path=img_path,
+                    device=args.device,
+                    max_new_tokens=args.max_new_tokens,
+                    dataset=args.dataset,
+                    debug=args.debug,
+                )
+            elapsed = timer.seconds
             total_seconds += elapsed
+            res["inference_time_s"] = round(elapsed, 4)
 
             out_file = output_dir / f"{img_path.stem}.json"
             out_file.write_text(
@@ -391,16 +422,22 @@ def main():
             det_count = len(res["detections"])
             print(
                 f"  [{i}/{len(image_paths)}] {img_path.name}: "
-                f"{det_count} boxes ({elapsed:.2f}s)"
+                f"{det_count} boxes ({elapsed:.2f}s)",
+                flush=True,
             )
             success_count += 1
         except Exception as e:
-            print(f"  [{i}/{len(image_paths)}] ERROR on {img_path.name}: {e}")
+            if monitor.page_seconds:
+                monitor.page_seconds.pop()
+            print(f"  [{i}/{len(image_paths)}] ERROR on {img_path.name}: {e}", flush=True)
 
     avg_speed = (total_seconds / success_count) if success_count > 0 else 0.0
+    if monitor.page_seconds:
+        save_runtime_summary("chandra", args.dataset, monitor.summary(dataset=args.dataset))
     print(
         f"[chandra] Done. Average {avg_speed:.2f}s/image. "
-        f"Predictions: {output_dir}"
+        f"Predictions: {output_dir}",
+        flush=True,
     )
 
 

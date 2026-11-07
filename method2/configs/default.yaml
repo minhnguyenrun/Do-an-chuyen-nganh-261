@@ -1,0 +1,31 @@
+models:
+  layout: PP-DocLayoutV3
+  text_detector: PP-OCRv5_server_det
+  light_ocr: PP-OCRv5_server_rec
+  semantic_parser: zai-org/GLM-OCR
+routing:
+  enable_light_ocr: true
+  classify_unlabeled_regions: true
+  complex_region_labels: [table, formula, figure, chart]
+  semantic_probe_on_ambiguous: true
+hypotheses:
+  enabled_actions: [KEEP, MERGE, SPLIT, RELABEL, REFINE_BBOX]
+  max_hypotheses_per_group: 3
+  max_candidate_group_size: 8
+  max_iterations: 1
+  coverage_threshold: 0.60
+validation:
+  min_score_gain: 0.10
+  min_absolute_score: 0.60
+  ambiguity_margin: 0.05
+inference:
+  max_in_flight: 1
+  max_glm_requests_per_page: 30
+  reuse_semantic_probe: true
+  device: auto
+  max_new_tokens: 1024
+  max_crop_edge: 1280
+spatial:
+  crop_margin: 0.03
+  recover_residuals: true
+  enable_text_detector: true

@@ -36,6 +36,13 @@ methods/dots_ocr/
 
 > **Cơ chế tải tự động**: Khi chạy script `run_inference.py` hoặc notebook `dots_ocr_report.ipynb`, nếu chưa có file weights trong thư mục `weights/`, hệ thống sẽ tự động tải trực tiếp từ Hugging Face qua `huggingface_hub`.
 
+### Cấu hình suy luận
+
+- Dùng cấu hình mặc định của processor chính thức (`min_pixels=3136`, `max_pixels=11289600`), prompt `prompt_layout_only_en`.
+- EOS `[151643, 151645, 151672, 151673]` (gồm cả `151672` của `generation_config.json`) và `max_new_tokens=2048`. Trước đây giới hạn 768 token làm cụt kết quả ở các trang nhiều box; sau khi sửa, Strict F1 trên 150 ảnh đầu của DocLayNet test tăng từ 0.413 lên 0.857.
+- `--batch-size` mặc định 1 (GPU 8 GB: batch lớn chậm hơn do tràn VRAM).
+- Mô hình không trả về confidence nên mọi box có `score = 0.95` (mAP kiểu COCO không có ý nghĩa).
+
 ---
 
 ## Bảng ánh xạ nhãn (Taxonomy Mapping)

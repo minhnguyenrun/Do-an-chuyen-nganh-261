@@ -27,6 +27,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src.common.profiling import ResourceMonitor, save_runtime_summary  # noqa: E402
+from src.common.splits import apply_split, describe, SPLITS  # noqa: E402
 
 LABEL_TO_DOCLAYNET_ID = {
     "caption": 1,
@@ -115,6 +116,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="doclaynet")
     parser.add_argument(
+        "--split",
+        default=None,
+        choices=sorted(SPLITS) + ["val", "validation"],
+        help="Tap du lieu DocLayNet: train / valid / test (thay cho --dataset doclaynet / doclaynet_val / doclaynet_test).",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=0,
@@ -135,6 +142,8 @@ def main() -> None:
     )
     parser.set_defaults(skip_existing=True)
     args = parser.parse_args()
+    args.dataset = apply_split(args.dataset, args.split)
+    print(f"[docling] Tap du lieu: {describe(args.dataset)}", flush=True)
 
     images_dir = ROOT_DIR / "datasets" / args.dataset / "processed" / "images"
     output_dir = ROOT_DIR / "outputs" / "predictions" / "docling" / args.dataset

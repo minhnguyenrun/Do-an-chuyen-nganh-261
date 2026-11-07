@@ -97,7 +97,7 @@ def _smart_resize(
     width: int,
     factor: int = 28,
     min_pixels: int = 3136,
-    max_pixels: int = 1024 * 28 * 28,
+    max_pixels: int = 11289600,
 ) -> Tuple[int, int]:
     """Computes the Qwen2-VL smart_resize dimensions (resized_height, resized_width)."""
     import math

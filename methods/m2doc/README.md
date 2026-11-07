@@ -97,6 +97,10 @@ python scripts/evaluate_predictions.py --method m2doc --dataset doclaynet --allo
 python visualization/scripts/visualize_predictions.py --method m2doc --dataset doclaynet --limit 20 --output-dir outputs/reports/m2doc_doclaynet
 ```
 
+### Đặc trưng văn bản (pdf_cells)
+
+M2Doc là mô hình đa phương thức: ngoài ảnh còn cần các ô văn bản (box + text) của trang. `src/ocr_provider.py` lấy chúng từ cột `pdf_cells` của các shard parquet DocLayNet (tự tải về `datasets/doclaynet/raw/data/` cho split `test`/`validation` ở lần chạy đầu), và chỉ rơi về RapidOCR khi trang không có trong parquet. **Thiếu các shard này, M2Doc gần như không phát hiện được gì** (hơn 1.300/4.999 trang test không có box nào trong lần chạy cũ), vì đặc trưng văn bản bị rỗng/khác phân bố lúc huấn luyện. Khi nạp checkpoint, `load_state_dict(strict=False)` khớp đủ khoá (0 khoá thiếu).
+
 ---
 
 ## Bảng ánh xạ nhãn (Taxonomy Mapping)

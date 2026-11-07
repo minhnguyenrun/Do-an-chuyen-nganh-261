@@ -18,6 +18,27 @@ DOAN261/
 
 Xem chi tiết nguồn và cách tải dữ liệu tại [datasets/README.md](datasets/README.md).
 
+## Quy ước 3 tập train / valid / test
+
+Tên tập được định nghĩa một chỗ duy nhất ở [src/common/splits.py](src/common/splits.py):
+
+| Tập | Dataset (`datasets/`) | Annotation | Dùng để |
+|---|---|---|---|
+| `train` | `doclaynet` | `train.json` | huấn luyện / fine-tune |
+| `valid` (`val`, `validation`) | `doclaynet_val` | `validation.json` | chọn siêu tham số, ngưỡng, cách map nhãn, so sánh phương án |
+| `test` | `doclaynet_test` | `test.json` | chỉ báo cáo kết quả cuối cùng, **không dùng để chỉnh bất cứ thứ gì** |
+
+`image_id` của DocLayNet đánh lại từ 0 trong mỗi tập nên mỗi tập là một dataset riêng, và prediction cũng tách riêng theo tập: `outputs/predictions/<method>/<dataset>/`, báo cáo ở `outputs/reports/<method>_<dataset>/`, runtime ở `outputs/runtime/<method>/<dataset>.json`.
+
+Mọi script nhận cùng một tùy chọn `--split {train,valid,test}`:
+
+```bash
+python methods/<method>/src/run_inference.py --split valid --limit 200
+python scripts/evaluate_predictions.py --method <method> --split valid
+```
+
+Script đánh giá in rõ tập đang dùng, cảnh báo khi đánh giá trên `train`, nhắc khi dùng `test`, và **từ chối** tổ hợp lẫn tập (vd. `--dataset doclaynet_test --split valid`). Notebook đổi tập bằng biến `SPLIT_NAME = "train" | "valid" | "test"` ở cell cấu hình đầu tiên. Lệnh cũ `--dataset doclaynet_test --split test` vẫn chạy bình thường.
+
 ## Cách chạy
 
 1. Tải dataset:
@@ -40,7 +61,7 @@ Xem chi tiết nguồn và cách tải dữ liệu tại [datasets/README.md](da
 | Phương pháp | Thư mục | Kiến trúc chính | Ghi chú |
 |---|---|---|---|
 | **Docling** | `methods/docling` | RT-DETR Layout Heron | Model tối ưu cho DocLayNet |
-| **PaddleOCR-VL** | `methods/paddleocr_vl` | PP-DocLayout_plus-L | Layout Detection + VLM |
+| **PaddleOCR-VL** | `methods/paddleocr_vl` | PP-DocLayoutV2 (layout stage của pipeline PaddleOCR-VL) | Layout Detection + VLM 0.9B (chỉ dùng tầng layout) |
 | **M2Doc (Cascade)** | `methods/m2doc` | Cascade Mask R-CNN + BERT | Multi-modal Early/Late Fusion (AAAI 2024, 87.2% mAP) |
 | **DINO + M2Doc** | `methods/dino_m2doc` | DINO-4scale DETR + BERT | Multi-modal DETR SOTA (AAAI 2024, 89.3% mAP) |
 | **Method 3 (ContextFusion)** | `methods/method3` | DINO_w_M2Doc + Book Context | Tích hợp ngữ cảnh toàn sách phân cấp |
@@ -60,4 +81,3 @@ Xem chi tiết nguồn và cách tải dữ liệu tại [datasets/README.md](da
    - **M2Doc & DINO + M2Doc**: Sử dụng `mmcv_shim.py` thay thế các toán tử C++ của MMDetection (`batched_nms`, `roi_align`, `MultiScaleDeformableAttention`) bằng `torchvision.ops` và `F.grid_sample` thuần PyTorch, không yêu cầu cài đặt C++ Build Tools hay MSVC. Bổ sung hỗ trợ trích xuất văn bản từ thư viện `RapidOCR 3.x+` (`RapidOCROutput`) và cache parquet cục bộ.
    - **dots.mocr**: Đã patch `modeling_dots_vision.py` để tự động fallback sang `torch.nn.functional.scaled_dot_product_attention` (`sdpa`) khi môi trường Windows không hỗ trợ cài đặt `flash_attn`.
    - **Chandra**: Sử dụng mô hình `datalab-to/chandra-ocr-2` (yêu cầu `transformers>=5.2.0`). Do Windows thiếu các native CUDA kernels của linear-attention (`causal_conv1d`, `flash-linear-attention`), mô hình sẽ fallback sang vòng lặp Python reference.
-

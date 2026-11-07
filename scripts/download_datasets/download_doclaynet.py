@@ -1,4 +1,32 @@
-"""Tải bộ dữ liệu DocLayNet từ HuggingFace Hub (tăng tốc hf_transfer + pipeline song song)."""
+"""Tải bộ dữ liệu DocLayNet từ HuggingFace Hub (một phần hoặc toàn bộ, hỗ trợ hf_transfer + pipeline song song).
+
+Dataset gốc (docling-project/DocLayNet-v1.2) được chia thành nhiều shard
+.parquet cho mỗi split (train 72 / validation 7 / test 6 shard, ~400-520MB mỗi
+shard, tổng ~40GB, 80,863 trang). Script tải các shard theo thứ tự split chỉ
+định (mặc định train -> validation -> test) cho tới khi đạt dung lượng giới hạn
+(mặc định 1GB, hoặc --all để tải hết), rồi (tuỳ chọn) trích ảnh + annotation ra
+dạng COCO-style JSON.
+
+image_id của DocLayNet đánh lại từ 0 trong MỖI split, nên mỗi split được lưu như
+một "dataset" riêng để ảnh không ghi đè lên nhau:
+    train      -> datasets/doclaynet/processed/       (annotations/train.json)
+    validation -> datasets/doclaynet_val/processed/   (annotations/validation.json)
+    test       -> datasets/doclaynet_test/processed/  (annotations/test.json)
+=> chạy method/đánh giá trên test: --dataset doclaynet_test --split test
+
+Mỗi shard được tải -> trích -> (tuỳ chọn) xoá raw ngay, nên --all --delete-raw
+chỉ cần thêm ~0.5GB tạm ngoài dung lượng ảnh (~36GB). Shard đã trích xong được
+ghi lại trong annotations/_shards/, chạy lại script sẽ bỏ qua (tiếp tục được khi
+bị ngắt).
+
+Usage:
+    python download_doclaynet.py --lightweight --splits test --max-images 50 --sample-output-dir sample
+    python download_doclaynet.py --max-size-gb 1
+    python download_doclaynet.py --splits test --max-images 20 --delete-raw --output-dataset doclaynet_test
+    python download_doclaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
+    python download_doclaynet.py --all --splits test --delete-raw
+    python download_doclaynet.py --all --splits test validation train --delete-raw
+"""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +36,8 @@ import os
 from pathlib import Path
 import sys
 import time
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 # Bật hf_transfer (Rust multi-threaded download)
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
@@ -42,6 +72,115 @@ THIS_DIR = Path(__file__).resolve().parent
 DATASETS_DIR = (THIS_DIR / "../../datasets").resolve()
 RAW_DIR = DATASETS_DIR / "doclaynet" / "raw"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def read_sample_url(url: str, max_bytes: int = 25_000_000) -> bytes:
+    """Bounded downloads for the small sample mode, never a parquet shard."""
+    for attempt in range(3):
+        try:
+            request = Request(url, headers={"User-Agent": "DocLayNet-lightweight-sample/1.0"})
+            with urlopen(request, timeout=60) as response:
+                data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise ValueError("Sample response is too large; refusing a large download")
+            return data
+        except (OSError, TimeoutError):
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+
+
+def download_lightweight_sample(split: str, count: int, output_dir: Path, *, offset: int = 0) -> Path:
+    """Download selected viewer images + COCO boxes without fetching full parquet files.
+
+    https://huggingface.co/docs/dataset-viewer/en/rows
+    The viewer may serialize JPEG previews; save PNG and scale boxes to actual pixels.
+    Checkpoint after every image so interrupted runs can resume.
+    """
+    if split not in SPLITS or type(count) is not int or not 1 <= count <= 1000 or offset < 0:
+        raise ValueError("Sample requires a valid split, 1..1000 images and nonnegative offset")
+    output_dir = Path(output_dir).resolve()
+    images_dir = output_dir / "images"
+    annotations_dir = output_dir / "annotations"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    annotations_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = annotations_dir / f"{split}.json"
+    identity = {"source": REPO_ID, "mode": "lightweight", "split": split, "offset": offset}
+    for other_path in annotations_dir.glob("*.json"):
+        if other_path == manifest_path:
+            continue
+        other_info = json.loads(other_path.read_text(encoding="utf-8")).get("info", {})
+        if other_info.get("mode") == "lightweight" and other_info.get("split") != split:
+            raise ValueError("Sample directory belongs to another split; choose a different --sample-output-dir")
+    coco = {"info": identity | {"requested_images": count}, "images": [], "annotations": [], "categories": CATEGORIES}
+    if manifest_path.exists():
+        cached = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if any(cached.get("info", {}).get(k) != v for k, v in identity.items()):
+            raise ValueError("Sample directory belongs to another split/offset; choose a different --sample-output-dir")
+        coco = cached
+        coco["info"]["requested_images"] = count
+        if len(coco["images"]) >= count and all((images_dir / image["file_name"]).is_file() for image in coco["images"][:count]):
+            print(f"[sample] Da co {count} anh: {manifest_path}. Khong tai lai.")
+            return manifest_path
+    known = {image["id"]: image for image in coco["images"]}
+    transferred = 0
+
+    def checkpoint():
+        tmp = manifest_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(coco, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, manifest_path)
+
+    for start in range(offset, offset + count, 5):
+        length = min(5, offset + count - start)
+        query = urlencode({"dataset": REPO_ID, "config": "default", "split": split,
+                           "offset": start, "length": length})
+        payload = read_sample_url("https://datasets-server.huggingface.co/rows?" + query)
+        transferred += len(payload)
+        rows = json.loads(payload)["rows"]
+        if len(rows) != length:
+            raise ValueError("Dataset returned fewer rows than requested; lower --max-images or --sample-offset")
+        for item in rows:
+            row = item["row"]
+            required = {"image", "metadata", "bboxes", "category_id"}
+            if required.intersection(item.get("truncated_cells", [])):
+                raise ValueError("Required sample fields were truncated by the viewer")
+            meta = row["metadata"]
+            image_id = int(meta["image_id"])
+            file_name = f"{image_id}.png"
+            path = images_dir / file_name
+            if image_id in known and path.is_file():
+                continue
+            url = row["image"]["src"]
+            if not url.startswith("https://"):
+                raise ValueError("Sample image must use HTTPS")
+            image_bytes = read_sample_url(url)
+            transferred += len(image_bytes)
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                image.load()
+                width, height = image.size
+                png = io.BytesIO()
+                image.convert("RGB").save(png, format="PNG")
+            path.write_bytes(png.getvalue())
+            if len(row["bboxes"]) != len(row["category_id"]):
+                raise ValueError(f"Annotation length mismatch at image {image_id}")
+            if image_id in known:
+                # Re-downloaded a missing file: its original annotations already exist.
+                continue
+            sx, sy = width / int(meta["coco_width"]), height / int(meta["coco_height"])
+            record = {"id": image_id, "file_name": file_name, "width": width, "height": height,
+                      "doc_category": meta.get("doc_category", ""), "row_index": item["row_idx"]}
+            coco["images"].append(record)
+            known[image_id] = record
+            for bbox, category_id in zip(row["bboxes"], row["category_id"]):
+                x, y, w, h = (float(v) for v in bbox)
+                coco["annotations"].append({"id": len(coco["annotations"]) + 1,
+                    "image_id": image_id, "category_id": int(category_id),
+                    "bbox": [x * sx, y * sy, w * sx, h * sy], "area": w * h * sx * sy})
+            checkpoint()
+            print(f"[sample] {len(coco['images'])}/{count} anh, da nhan {transferred / 1e6:.1f} MB", flush=True)
+    checkpoint()
+    print(f"[sample] Xong: {len(coco['images'])} anh + COCO annotations. Khong tai parquet shard.")
+    return manifest_path
 
 
 def processed_dir(split: str) -> Path:
@@ -173,11 +312,33 @@ def is_shard_complete(split: str, rfilename: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--all", action="store_true", default=True)
-    parser.add_argument("--splits", nargs="+", choices=SPLITS, default=["train", "validation", "test"])
-    parser.add_argument("--delete-raw", action="store_true", default=True)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--max-size-gb", type=float, default=1.0,
+                         help="Dung luong toi da can tai, tinh bang GB (mac dinh 1.0)")
+    parser.add_argument("--all", action="store_true", default=True,
+                         help="Tai toan bo cac split chi dinh, bo qua --max-size-gb")
+    parser.add_argument("--splits", nargs="+", choices=SPLITS, default=SPLITS,
+                         help="Cac split can tai, theo thu tu (mac dinh: train validation test)")
+    parser.add_argument("--no-extract", action="store_true",
+                         help="Chi tai raw parquet, khong convert sang processed/")
+    parser.add_argument("--max-images", type=int, default=None,
+                         help="So luong anh toi da can trich xuat moi split (mac dinh: tat ca)")
+    parser.add_argument("--delete-raw", action="store_true", default=True,
+                         help="Xoa file raw parquet ngay sau khi trich xong tung shard")
+    parser.add_argument("--lightweight", action="store_true",
+                         help="Tai tung anh + annotation qua dataset viewer, khong tai parquet shard")
+    parser.add_argument("--sample-output-dir", type=Path,
+                         default=DATASETS_DIR / "doclaynet_sample" / "processed")
+    parser.add_argument("--sample-offset", type=int, default=0)
     args = parser.parse_args()
+
+    if args.lightweight:
+        if len(args.splits) != 1 or args.no_extract:
+            parser.error("--lightweight needs one --splits value and cannot use --no-extract")
+        if args.max_images is None or not 1 <= args.max_images <= 1000 or args.sample_offset < 0:
+            parser.error("--lightweight needs --max-images between 1 and 1000 and nonnegative --sample-offset")
+        download_lightweight_sample(args.splits[0], args.max_images, args.sample_output_dir, offset=args.sample_offset)
+        return
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     shards = list_shards(HfApi(), args.splits)

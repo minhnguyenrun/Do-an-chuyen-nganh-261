@@ -1,13 +1,16 @@
 {
   "id": "hongnguynngthhjk/doan261-dots-ocr",
   "title": "DOAN261 Dots Ocr",
-  "code_file": "kernel.py",
+  "code_file": "dots_ocr_report.ipynb",
   "language": "python",
-  "kernel_type": "script",
+  "kernel_type": "notebook",
   "is_private": true,
   "enable_gpu": true,
   "enable_internet": true,
-  "dataset_sources": [],
+  "dataset_sources": [
+    "hongnguynngthhjk/doclaynet",
+    "hongnguynngthhjk/doan261-dots-ocr-source"
+  ],
   "competition_sources": [],
   "kernel_sources": [],
   "model_sources": []
