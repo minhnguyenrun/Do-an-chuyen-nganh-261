@@ -1,0 +1,108 @@
+{
+  "classes": [
+    {
+      "class": "Caption",
+      "base_precision": 0.0982,
+      "base_recall": 0.6718,
+      "base_f1": 0.1714,
+      "fusion_precision": 0.75,
+      "fusion_recall": 0.2977,
+      "fusion_f1": 0.4262
+    },
+    {
+      "class": "Footnote",
+      "base_precision": 0.0,
+      "base_recall": 0.0,
+      "base_f1": 0.0,
+      "fusion_precision": 0.0,
+      "fusion_recall": 0.0,
+      "fusion_f1": 0.0
+    },
+    {
+      "class": "Formula",
+      "base_precision": 0.0,
+      "base_recall": 0.0,
+      "base_f1": 0.0,
+      "fusion_precision": 0.0,
+      "fusion_recall": 0.0,
+      "fusion_f1": 0.0
+    },
+    {
+      "class": "List-item",
+      "base_precision": 0.0482,
+      "base_recall": 0.841,
+      "base_f1": 0.0911,
+      "fusion_precision": 0.0741,
+      "fusion_recall": 0.3744,
+      "fusion_f1": 0.1237
+    },
+    {
+      "class": "Page-footer",
+      "base_precision": 0.1929,
+      "base_recall": 0.9266,
+      "base_f1": 0.3194,
+      "fusion_precision": 0.0161,
+      "fusion_recall": 0.1313,
+      "fusion_f1": 0.0287
+    },
+    {
+      "class": "Page-header",
+      "base_precision": 0.3514,
+      "base_recall": 0.7927,
+      "base_f1": 0.4869,
+      "fusion_precision": 0.0395,
+      "fusion_recall": 0.0183,
+      "fusion_f1": 0.025
+    },
+    {
+      "class": "Picture",
+      "base_precision": 0.0809,
+      "base_recall": 0.8936,
+      "base_f1": 0.1484,
+      "fusion_precision": 0.0136,
+      "fusion_recall": 0.3501,
+      "fusion_f1": 0.0262
+    },
+    {
+      "class": "Section-header",
+      "base_precision": 0.345,
+      "base_recall": 0.7685,
+      "base_f1": 0.4762,
+      "fusion_precision": 0.0054,
+      "fusion_recall": 0.0036,
+      "fusion_f1": 0.0043
+    },
+    {
+      "class": "Table",
+      "base_precision": 0.0546,
+      "base_recall": 0.964,
+      "base_f1": 0.1033,
+      "fusion_precision": 0.0044,
+      "fusion_recall": 0.3694,
+      "fusion_f1": 0.0086
+    },
+    {
+      "class": "Text",
+      "base_precision": 0.517,
+      "base_recall": 0.9084,
+      "base_f1": 0.659,
+      "fusion_precision": 0.044,
+      "fusion_recall": 0.8364,
+      "fusion_f1": 0.0837
+    },
+    {
+      "class": "Title",
+      "base_precision": 0.1667,
+      "base_recall": 0.3333,
+      "base_f1": 0.2222,
+      "fusion_precision": 0.0,
+      "fusion_recall": 0.0,
+      "fusion_f1": 0.0
+    }
+  ],
+  "overall": {
+    "base_micro_f1": 0.2936,
+    "fusion_micro_f1": 0.0535,
+    "f1_improvement": -24.01
+  }
+}

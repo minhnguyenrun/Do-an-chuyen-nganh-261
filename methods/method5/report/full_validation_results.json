@@ -1,0 +1,66 @@
+{
+  "total_pages": 4999,
+  "eval_time_sec": 587.4,
+  "fps": 8.5,
+  "weights": "methods/method5/weights/method5_best.pth",
+  "map": 0.6511,
+  "map50": 0.7947,
+  "map75": 0.7024,
+  "per_category": {
+    "1": {
+      "ap": 0.6904,
+      "ap50": 0.8173,
+      "name": "Caption"
+    },
+    "2": {
+      "ap": 0.6886,
+      "ap50": 0.7958,
+      "name": "Footnote"
+    },
+    "3": {
+      "ap": 0.643,
+      "ap50": 0.9047,
+      "name": "Formula"
+    },
+    "4": {
+      "ap": 0.7577,
+      "ap50": 0.8663,
+      "name": "List-item"
+    },
+    "5": {
+      "ap": 0.5588,
+      "ap50": 0.8665,
+      "name": "Page-footer"
+    },
+    "6": {
+      "ap": 0.6534,
+      "ap50": 0.8691,
+      "name": "Page-header"
+    },
+    "7": {
+      "ap": 0.7329,
+      "ap50": 0.8095,
+      "name": "Picture"
+    },
+    "8": {
+      "ap": 0.6131,
+      "ap50": 0.8564,
+      "name": "Section-header"
+    },
+    "9": {
+      "ap": 0.7927,
+      "ap50": 0.8332,
+      "name": "Table"
+    },
+    "10": {
+      "ap": 0.806,
+      "ap50": 0.8878,
+      "name": "Text"
+    },
+    "11": {
+      "ap": 0.2262,
+      "ap50": 0.2355,
+      "name": "Title"
+    }
+  }
+}

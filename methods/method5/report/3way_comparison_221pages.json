@@ -1,0 +1,90 @@
+{
+  "eval_pages": 221,
+  "base_model": {
+    "name": "docling-project/docling-layout-heron",
+    "map": 0.6302,
+    "map50": 0.8699,
+    "map75": 0.6209
+  },
+  "phase1_epoch3": {
+    "weights": "method5_best_phase1_epoch3.pth",
+    "map": 0.7341,
+    "map50": 0.8643,
+    "map75": 0.7917
+  },
+  "phase2_epoch2": {
+    "weights": "finetune_epoch_2.pth",
+    "epoch": 2,
+    "map": 0.7204,
+    "map50": 0.849,
+    "map75": 0.7815
+  },
+  "per_category": {
+    "Caption": {
+      "base": 0.8216,
+      "phase1": 0.8565,
+      "phase2": 0.8561,
+      "delta_p2_vs_base": 0.0345
+    },
+    "Footnote": {
+      "base": 0.3252,
+      "phase1": 0.246,
+      "phase2": 0.2549,
+      "delta_p2_vs_base": -0.0704
+    },
+    "Formula": {
+      "base": 0.6215,
+      "phase1": 0.6869,
+      "phase2": 0.6691,
+      "delta_p2_vs_base": 0.0476
+    },
+    "List-item": {
+      "base": 0.7616,
+      "phase1": 0.8828,
+      "phase2": 0.8687,
+      "delta_p2_vs_base": 0.107
+    },
+    "Page-footer": {
+      "base": 0.3418,
+      "phase1": 0.7474,
+      "phase2": 0.7598,
+      "delta_p2_vs_base": 0.418
+    },
+    "Page-header": {
+      "base": 0.3942,
+      "phase1": 0.5959,
+      "phase2": 0.5716,
+      "delta_p2_vs_base": 0.1774
+    },
+    "Picture": {
+      "base": 0.9606,
+      "phase1": 0.9743,
+      "phase2": 0.973,
+      "delta_p2_vs_base": 0.0124
+    },
+    "Section-header": {
+      "base": 0.4525,
+      "phase1": 0.7154,
+      "phase2": 0.6892,
+      "delta_p2_vs_base": 0.2366
+    },
+    "Table": {
+      "base": 0.6269,
+      "phase1": 0.6235,
+      "phase2": 0.6207,
+      "delta_p2_vs_base": -0.0063
+    },
+    "Text": {
+      "base": 0.7966,
+      "phase1": 0.8766,
+      "phase2": 0.8712,
+      "delta_p2_vs_base": 0.0746
+    },
+    "Title": {
+      "base": 0.8291,
+      "phase1": 0.8702,
+      "phase2": 0.79,
+      "delta_p2_vs_base": -0.0392
+    }
+  }
+}

@@ -1,39 +1,16 @@
-"""Tải bộ dữ liệu DocLayNet từ HuggingFace Hub (một phần hoặc toàn bộ).
-
-Dataset gốc (docling-project/DocLayNet-v1.2) được chia thành nhiều shard
-.parquet cho mỗi split (train 72 / validation 7 / test 6 shard, ~400-520MB mỗi
-shard, tổng ~40GB, 80,863 trang). Script tải các shard theo thứ tự split chỉ
-định (mặc định train -> validation -> test) cho tới khi đạt dung lượng giới hạn
-(mặc định 1GB, hoặc --all để tải hết), rồi (tuỳ chọn) trích ảnh + annotation ra
-dạng COCO-style JSON.
-
-image_id của DocLayNet đánh lại từ 0 trong MỖI split, nên mỗi split được lưu như
-một "dataset" riêng để ảnh không ghi đè lên nhau:
-    train      -> datasets/doclaynet/processed/       (annotations/train.json)
-    validation -> datasets/doclaynet_val/processed/   (annotations/validation.json)
-    test       -> datasets/doclaynet_test/processed/  (annotations/test.json)
-=> chạy method/đánh giá trên test: --dataset doclaynet_test --split test
-
-Mỗi shard được tải -> trích -> (tuỳ chọn) xoá raw ngay, nên --all --delete-raw
-chỉ cần thêm ~0.5GB tạm ngoài dung lượng ảnh (~36GB). Shard đã trích xong được
-ghi lại trong annotations/_shards/, chạy lại script sẽ bỏ qua (tiếp tục được khi
-bị ngắt).
-
-Usage:
-    python download_doclaynet.py --max-size-gb 1
-    python download_doclaynet.py --splits test --max-images 20 --delete-raw --output-dataset doclaynet_test
-    python download_doclaynet.py --max-size-gb 0.5 --max-images 250 --delete-raw
-    python download_doclaynet.py --all --splits test --delete-raw
-    python download_doclaynet.py --all --splits test validation train --delete-raw
-"""
+"""Tải bộ dữ liệu DocLayNet từ HuggingFace Hub (tăng tốc hf_transfer + pipeline song song)."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import os
 from pathlib import Path
 import sys
 import time
+
+# Bật hf_transfer (Rust multi-threaded download)
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -42,7 +19,6 @@ if hasattr(sys.stderr, "reconfigure"):
 
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
-from tqdm import tqdm
 
 REPO_ID = "docling-project/DocLayNet-v1.2"
 SPLITS = ["train", "validation", "test"]
@@ -73,12 +49,10 @@ def processed_dir(split: str) -> Path:
 
 
 def shard_record_path(split: str, rfilename: str) -> Path:
-    """File ghi annotation của 1 shard đã trích xong (đánh dấu shard hoàn tất)."""
     return processed_dir(split) / "annotations" / "_shards" / f"{Path(rfilename).stem}.json"
 
 
 def list_shards(api: HfApi, splits: list) -> list:
-    """Trả về danh sách (split, rfilename, size_bytes) theo thứ tự split chỉ định."""
     info = api.dataset_info(REPO_ID, files_metadata=True)
     by_split = {split: [] for split in splits}
     for sibling in info.siblings:
@@ -93,7 +67,6 @@ def list_shards(api: HfApi, splits: list) -> list:
 
 
 def download_shard(rfilename: str, attempts: int = 5) -> Path:
-    """Tai 1 shard, thu lai khi loi mang tam thoi (HF CDN thinh thoang ngat ket noi)."""
     for attempt in range(1, attempts + 1):
         try:
             return Path(hf_hub_download(
@@ -105,24 +78,21 @@ def download_shard(rfilename: str, attempts: int = 5) -> Path:
         except Exception as e:
             if attempt == attempts:
                 raise
-            wait = 30 * attempt
-            print(f"[download] Loi khi tai {rfilename} (lan {attempt}/{attempts}): "
-                  f"{type(e).__name__}: {str(e)[:200]}. Thu lai sau {wait}s...", flush=True)
+            wait = 15 * attempt
+            print(f"[download] Loi khi tai {rfilename} (lan {attempt}/{attempts}): {e}. Thu lai sau {wait}s...", flush=True)
             time.sleep(wait)
 
 
 def delete_raw_file(local_path: Path) -> None:
-    """Xoa file parquet da trich xong de giai phong dung luong o cung."""
     try:
         size = local_path.stat().st_size
         local_path.unlink()
-        print(f"[cleanup] Da xoa file raw: {local_path.name} ({size / 1e6:.1f} MB)")
+        print(f"[cleanup] Da xoa: {local_path.name} ({size / 1e6:.1f} MB)", flush=True)
     except OSError as e:
-        print(f"[cleanup] Khong the xoa {local_path.name}: {e}")
+        print(f"[cleanup] Khong the xoa {local_path.name}: {e}", flush=True)
 
 
-def extract_shard(split: str, rfilename: str, local_path: Path, max_images: int | None) -> int:
-    """Trich anh (.png) + annotation cua 1 shard; ghi ra annotations/_shards/<shard>.json."""
+def extract_shard(split: str, rfilename: str, local_path: Path, max_images: int | None = None) -> int:
     import pandas as pd
 
     images_dir = processed_dir(split) / "images"
@@ -133,17 +103,14 @@ def extract_shard(split: str, rfilename: str, local_path: Path, max_images: int 
     if not complete:
         df = df.iloc[:max_images]
 
-    images, annotations = [], []
-    for _, row in tqdm(df.iterrows(), total=len(df), desc=f"{split}:{Path(rfilename).name}"):
-        meta = row["metadata"]
+    images, annotations, img_tasks = [], [], []
+    for row in df.itertuples(index=False):
+        meta = row.metadata
         image_id = int(meta["image_id"])
         file_name = f"{image_id}.png"
 
-        img_bytes = row["image"]["bytes"] if isinstance(row["image"], dict) else row["image"]
-        if img_bytes[:8] == PNG_MAGIC:
-            (images_dir / file_name).write_bytes(img_bytes)  # ảnh gốc đã là PNG, không cần encode lại
-        else:
-            Image.open(io.BytesIO(img_bytes)).save(images_dir / file_name)
+        img_bytes = row.image["bytes"] if isinstance(row.image, dict) else row.image
+        img_tasks.append((images_dir / file_name, img_bytes))
 
         images.append({
             "id": image_id,
@@ -151,14 +118,28 @@ def extract_shard(split: str, rfilename: str, local_path: Path, max_images: int 
             "width": int(meta["coco_width"]),
             "height": int(meta["coco_height"]),
             "doc_category": meta["doc_category"],
+            "original_filename": meta.get("original_filename"),
+            "page_no": int(meta["page_no"]) if "page_no" in meta and meta["page_no"] is not None else None,
+            "num_pages": int(meta["num_pages"]) if "num_pages" in meta and meta["num_pages"] is not None else None,
+            "collection": meta.get("collection"),
         })
-        for bbox, category_id, area in zip(row["bboxes"], row["category_id"], row["area"]):
+        for bbox, category_id, area in zip(row.bboxes, row.category_id, row.area):
             annotations.append({
                 "image_id": image_id,
                 "category_id": int(category_id),
                 "bbox": [float(x) for x in bbox],
                 "area": float(area),
             })
+
+    def _write_img(task):
+        p, b = task
+        if b[:8] == PNG_MAGIC:
+            p.write_bytes(b)
+        else:
+            Image.open(io.BytesIO(b)).save(p)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(_write_img, img_tasks))
 
     record = shard_record_path(split, rfilename)
     record.parent.mkdir(parents=True, exist_ok=True)
@@ -169,7 +150,6 @@ def extract_shard(split: str, rfilename: str, local_path: Path, max_images: int 
 
 
 def merge_split(split: str) -> None:
-    """Gop annotation cua moi shard da trich thanh annotations/<split>.json (COCO)."""
     records = sorted((processed_dir(split) / "annotations" / "_shards").glob("*.json"))
     coco = {"images": [], "annotations": [], "categories": CATEGORIES}
     for record in records:
@@ -182,73 +162,68 @@ def merge_split(split: str) -> None:
     tmp = out_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(coco), encoding="utf-8")
     os.replace(tmp, out_path)
-    print(f"[extract] {out_path} ({len(coco['images'])} anh, {len(coco['annotations'])} box)")
+    print(f"[merge] {out_path.name}: {len(coco['images']):,} anh, {len(coco['annotations']):,} box", flush=True)
 
 
 def is_shard_complete(split: str, rfilename: str) -> bool:
     record = shard_record_path(split, rfilename)
     if not record.exists():
         return False
-    # Ban ghi khong co "complete" van duoc coi la day du.
     return json.loads(record.read_text(encoding="utf-8")).get("complete", True)
 
 
-def extracted_count(split: str) -> int:
-    records = (processed_dir(split) / "annotations" / "_shards").glob("*.json")
-    return sum(len(json.loads(r.read_text(encoding="utf-8"))["images"]) for r in records)
-
-
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--max-size-gb", type=float, default=1.0,
-                         help="Dung luong toi da can tai, tinh bang GB (mac dinh 1.0)")
-    parser.add_argument("--all", action="store_true",
-                         help="Tai toan bo cac split chi dinh, bo qua --max-size-gb")
-    parser.add_argument("--splits", nargs="+", choices=SPLITS, default=SPLITS,
-                         help="Cac split can tai, theo thu tu (mac dinh: train validation test)")
-    parser.add_argument("--no-extract", action="store_true",
-                         help="Chi tai raw parquet, khong convert sang processed/")
-    parser.add_argument("--max-images", type=int, default=None,
-                         help="So luong anh toi da can trich xuat moi split (mac dinh: tat ca)")
-    parser.add_argument("--delete-raw", action="store_true",
-                         help="Xoa file raw parquet ngay sau khi trich xong tung shard")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--all", action="store_true", default=True)
+    parser.add_argument("--splits", nargs="+", choices=SPLITS, default=["train", "validation", "test"])
+    parser.add_argument("--delete-raw", action="store_true", default=True)
     args = parser.parse_args()
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    max_size_bytes = float("inf") if args.all else int(args.max_size_gb * 1e9)
     shards = list_shards(HfApi(), args.splits)
-    print(f"[download] {len(shards)} shard trong {', '.join(args.splits)} "
-          f"({sum(s for _, _, s in shards) / 1e9:.1f} GB)")
 
-    total = 0
-    for index, (split, rfilename, size) in enumerate(shards, start=1):
-        if total >= max_size_bytes:
-            break
-        total += size
-        prefix = f"[{index}/{len(shards)}] {rfilename} ({size / 1e6:.0f} MB)"
-
-        if not args.no_extract and is_shard_complete(split, rfilename):
-            print(f"{prefix}: da trich truoc do, bo qua")
+    pending = []
+    for split, rfilename, size in shards:
+        if is_shard_complete(split, rfilename):
             continue
+        pending.append((split, rfilename, size))
 
-        remaining = None
-        if args.max_images is not None and not args.no_extract:
-            remaining = args.max_images - extracted_count(split)
-            if remaining <= 0:
-                print(f"{prefix}: da du --max-images cho split {split}, bo qua")
-                continue
+    print(f"[pipeline] Co {len(pending)}/{len(shards)} shard can xu ly (tong ~{sum(s[2] for s in pending)/1e9:.1f} GB)...", flush=True)
+    if not pending:
+        print("[pipeline] Tat ca shard da hoan tat!")
+        for split in args.splits:
+            merge_split(split)
+        return
 
-        print(f"{prefix}: dang tai...", flush=True)
-        local_path = download_shard(rfilename)
-        if args.no_extract:
-            continue
+    # Pipeline: Tai truoc shard tiep theo song song voi trich xuat
+    with ThreadPoolExecutor(max_workers=1) as download_pool:
+        next_download = download_pool.submit(download_shard, pending[0][1])
 
-        extract_shard(split, rfilename, local_path, remaining)
+        for idx, (split, rfilename, size) in enumerate(pending):
+            prefix = f"[{idx+1}/{len(pending)}] {Path(rfilename).name} ({size / 1e6:.0f} MB)"
+            t0_step = time.perf_counter()
+
+            local_path = next_download.result()
+
+            if idx + 1 < len(pending):
+                next_download = download_pool.submit(download_shard, pending[idx + 1][1])
+
+            t0_ext = time.perf_counter()
+            n_imgs = extract_shard(split, rfilename, local_path)
+            t_ext = time.perf_counter() - t0_ext
+
+            if args.delete_raw:
+                delete_raw_file(local_path)
+
+            t_total = time.perf_counter() - t0_step
+            print(f"{prefix} -> Da trich {n_imgs} anh trong {t_ext:.2f}s (chu ky: {t_total:.1f}s)", flush=True)
+
+            if (idx + 1) % 5 == 0 or idx + 1 == len(pending):
+                merge_split(split)
+
+    for split in args.splits:
         merge_split(split)
-        if args.delete_raw:
-            delete_raw_file(local_path)
-
-    print(f"[download] Xong. Tong cong {min(total, max_size_bytes) / 1e9:.2f} GB shard da xu ly.")
+    print("[pipeline] Hoan thanh 100% toan bo du lieu!")
 
 
 if __name__ == "__main__":
