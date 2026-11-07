@@ -1,0 +1,11 @@
+-r requirements-models.txt
+accelerate>=1,<2
+matplotlib>=3.8,<4
+pandas>=2.2,<4
+PyMuPDF>=1.24,<2
+ipykernel>=6,<8
+nbformat>=5.10,<6
+nbclient>=0.10,<1
+bleach>=6,<7
+pycocotools>=2.0.7,<3
+# Install a compatible torch build separately; preserve the existing CUDA torch.

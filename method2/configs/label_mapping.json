@@ -1,0 +1,233 @@
+{
+  "checked_date": "2026-10-24",
+  "source": "https://github.com/zai-org/GLM-OCR/blob/main/glmocr/config.yaml",
+  "layout_model": "PP-DocLayoutV3",
+  "mapping_author": "Dual-Skip project; not an official cross-dataset mapping",
+  "records": [
+    {
+      "source_label": "abstract",
+      "pipeline_label": "abstract",
+      "sdk_task": "text",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "algorithm",
+      "pipeline_label": "algorithm",
+      "sdk_task": "text",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "aside_text",
+      "pipeline_label": "aside_text",
+      "sdk_task": "abandon",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "chart",
+      "pipeline_label": "chart",
+      "sdk_task": "skip",
+      "doclaynet_id": 7,
+      "doclaynet_label": "Picture",
+      "merged_heading_id": 7,
+      "note": ""
+    },
+    {
+      "source_label": "content",
+      "pipeline_label": "content",
+      "sdk_task": "text",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "display_formula",
+      "pipeline_label": "formula",
+      "sdk_task": "formula",
+      "doclaynet_id": 3,
+      "doclaynet_label": "Formula",
+      "merged_heading_id": 3,
+      "note": ""
+    },
+    {
+      "source_label": "doc_title",
+      "pipeline_label": "title",
+      "sdk_task": "text",
+      "doclaynet_id": 11,
+      "doclaynet_label": "Title",
+      "merged_heading_id": 8,
+      "note": "Title/Section-header distinction was collapsed; use merged-heading evaluation."
+    },
+    {
+      "source_label": "figure_title",
+      "pipeline_label": "figure_title",
+      "sdk_task": "text",
+      "doclaynet_id": 1,
+      "doclaynet_label": "Caption",
+      "merged_heading_id": 1,
+      "note": ""
+    },
+    {
+      "source_label": "footer",
+      "pipeline_label": "footer",
+      "sdk_task": "abandon",
+      "doclaynet_id": 5,
+      "doclaynet_label": "Page-footer",
+      "merged_heading_id": 5,
+      "note": ""
+    },
+    {
+      "source_label": "footer_image",
+      "pipeline_label": "footer_image",
+      "sdk_task": "abandon",
+      "doclaynet_id": 5,
+      "doclaynet_label": "Page-footer",
+      "merged_heading_id": 5,
+      "note": ""
+    },
+    {
+      "source_label": "footnote",
+      "pipeline_label": "footnote",
+      "sdk_task": "abandon",
+      "doclaynet_id": 2,
+      "doclaynet_label": "Footnote",
+      "merged_heading_id": 2,
+      "note": ""
+    },
+    {
+      "source_label": "formula_number",
+      "pipeline_label": "formula_number",
+      "sdk_task": "text",
+      "doclaynet_id": 0,
+      "doclaynet_label": "Unmapped",
+      "merged_heading_id": 0,
+      "note": "An equation identifier is not a complete Formula region."
+    },
+    {
+      "source_label": "header",
+      "pipeline_label": "header",
+      "sdk_task": "abandon",
+      "doclaynet_id": 6,
+      "doclaynet_label": "Page-header",
+      "merged_heading_id": 6,
+      "note": ""
+    },
+    {
+      "source_label": "header_image",
+      "pipeline_label": "header_image",
+      "sdk_task": "abandon",
+      "doclaynet_id": 6,
+      "doclaynet_label": "Page-header",
+      "merged_heading_id": 6,
+      "note": ""
+    },
+    {
+      "source_label": "image",
+      "pipeline_label": "image",
+      "sdk_task": "skip",
+      "doclaynet_id": 7,
+      "doclaynet_label": "Picture",
+      "merged_heading_id": 7,
+      "note": ""
+    },
+    {
+      "source_label": "inline_formula",
+      "pipeline_label": "formula",
+      "sdk_task": "formula",
+      "doclaynet_id": 3,
+      "doclaynet_label": "Formula",
+      "merged_heading_id": 3,
+      "note": ""
+    },
+    {
+      "source_label": "number",
+      "pipeline_label": "number",
+      "sdk_task": "abandon",
+      "doclaynet_id": 0,
+      "doclaynet_label": "Unmapped",
+      "merged_heading_id": 0,
+      "note": "Page number needs page context to distinguish header/footer."
+    },
+    {
+      "source_label": "paragraph_title",
+      "pipeline_label": "title",
+      "sdk_task": "text",
+      "doclaynet_id": 11,
+      "doclaynet_label": "Title",
+      "merged_heading_id": 8,
+      "note": "Title/Section-header distinction was collapsed; use merged-heading evaluation."
+    },
+    {
+      "source_label": "reference",
+      "pipeline_label": "reference",
+      "sdk_task": "abandon",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "reference_content",
+      "pipeline_label": "reference_content",
+      "sdk_task": "text",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "seal",
+      "pipeline_label": "seal",
+      "sdk_task": "text",
+      "doclaynet_id": 0,
+      "doclaynet_label": "Unmapped",
+      "merged_heading_id": 0,
+      "note": "No explicit seal class; Picture is not assumed automatically."
+    },
+    {
+      "source_label": "table",
+      "pipeline_label": "table",
+      "sdk_task": "table",
+      "doclaynet_id": 9,
+      "doclaynet_label": "Table",
+      "merged_heading_id": 9,
+      "note": ""
+    },
+    {
+      "source_label": "text",
+      "pipeline_label": "text",
+      "sdk_task": "text",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "vertical_text",
+      "pipeline_label": "vertical_text",
+      "sdk_task": "text",
+      "doclaynet_id": 10,
+      "doclaynet_label": "Text",
+      "merged_heading_id": 10,
+      "note": ""
+    },
+    {
+      "source_label": "vision_footnote",
+      "pipeline_label": "vision_footnote",
+      "sdk_task": "text",
+      "doclaynet_id": 0,
+      "doclaynet_label": "Unmapped",
+      "merged_heading_id": 0,
+      "note": "Visual note may be Caption/Footnote/Text; role needs verification."
+    }
+  ]
+}
