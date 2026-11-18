@@ -43,6 +43,16 @@ và test local.
 
 ## Cách tải
 
+Hai notebook Cascaded Layout trong `method2` dùng chung dữ liệu theo cấu trúc này.
+Cell chuẩn bị dữ liệu tự gọi script dưới đây khi chưa đủ ảnh/GT, không tải vào `method2/outputs`:
+
+```powershell
+python scripts/download_datasets/download_doclaynet.py --ensure --splits test --max-images 20
+```
+
+`--ensure` dùng lại ảnh/annotation đã có, dựng lại annotation từ `_shards` khi cần,
+và tải hoặc khôi phục ảnh thiếu từ parquet gốc. Không dùng ảnh preview lightweight.
+
 ```bash
 pip install -r scripts/download_datasets/requirements.txt
 

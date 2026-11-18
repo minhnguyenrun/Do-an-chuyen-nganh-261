@@ -1,0 +1,27 @@
+# Separate environment; install a matching CUDA torch/torchvision build FIRST.
+# These constraints do not request a torch replacement. Paddle CPU is not installed here.
+numpy>=1.26,<3
+opencv-python>=4.10,<5
+shapely>=2,<3
+paddleocr[doc-parser]>=3.3,<4
+doclayout-yolo>=0.0.4,<0.1
+mineru-vl-utils==2.0.8
+transformers>=5.10.1,<6
+accelerate>=1,<2
+huggingface-hub>=0.34,<2
+Pillow>=10
+pandas>=2
+matplotlib>=3.8
+PyMuPDF>=1.24
+pycocotools>=2.0.7
+ipykernel>=6
+nbformat>=5
+nbclient>=0.10
+pytest>=8
+# Root DocLayNet downloader (original parquet images + GT).
+pyarrow>=15
+tqdm>=4.66
+
+# Optional CPU semantics in the Cascaded runtime environment:
+# python -m pip install "model2vec==0.10.0" "lightgbm==4.7.0" "huggingface-hub>=1,<2"
+# The semantic trainer uses the separately verified isolated target in its assets manifest.

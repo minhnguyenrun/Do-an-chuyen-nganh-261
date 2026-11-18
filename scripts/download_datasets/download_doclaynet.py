@@ -20,6 +20,7 @@ ghi lại trong annotations/_shards/, chạy lại script sẽ bỏ qua (tiếp 
 bị ngắt).
 
 Usage:
+    python download_doclaynet.py --ensure --splits test --max-images 20
     python download_doclaynet.py --lightweight --splits test --max-images 50 --sample-output-dir sample
     python download_doclaynet.py --max-size-gb 1
     python download_doclaynet.py --splits test --max-images 20 --delete-raw --output-dataset doclaynet_test
@@ -280,7 +281,7 @@ def extract_shard(split: str, rfilename: str, local_path: Path, max_images: int 
     return len(images)
 
 
-def merge_split(split: str) -> None:
+def merge_split(split: str, *, preserve_existing: bool = False) -> None:
     """Gop annotation cua moi shard da trich thanh annotations/<split>.json (COCO)."""
     records = sorted((processed_dir(split) / "annotations" / "_shards").glob("*.json"))
     coco = {"images": [], "annotations": [], "categories": CATEGORIES}
@@ -291,6 +292,15 @@ def merge_split(split: str) -> None:
             coco["annotations"].append({"id": len(coco["annotations"]) + 1, **ann})
 
     out_path = processed_dir(split) / "annotations" / f"{split}.json"
+    if preserve_existing and out_path.exists():
+        previous = json.loads(out_path.read_text(encoding='utf-8'))
+        replaced = {im['id'] for im in coco['images']}
+        images = {im['id']: im for im in previous.get('images', [])}
+        images.update({im['id']: im for im in coco['images']})
+        coco['images'] = list(images.values())
+        annotations = [ann for ann in previous.get('annotations', []) if ann['image_id'] not in replaced]
+        annotations += coco['annotations']
+        coco['annotations'] = [dict(ann, id=i+1) for i, ann in enumerate(annotations)]
     tmp = out_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(coco), encoding="utf-8")
     os.replace(tmp, out_path)
@@ -308,6 +318,61 @@ def is_shard_complete(split: str, rfilename: str) -> bool:
 def extracted_count(split: str) -> int:
     records = (processed_dir(split) / "annotations" / "_shards").glob("*.json")
     return sum(len(json.loads(r.read_text(encoding="utf-8"))["images"]) for r in records)
+
+
+def ensure_processed_images(split: str, count: int) -> Path:
+    """Reuse canonical processed data; fetch/repair only shards needed for N images.
+
+    Uses original parquet images, never viewer previews. Existing shard records
+    are not shrunk when repairing a missing image or extending a partial shard.
+    """
+    if split not in SPLITS or type(count) is not int or count < 1:
+        raise ValueError('Expected one valid split and a positive image count')
+    destination = processed_dir(split)
+    manifest = destination / 'annotations' / f'{split}.json'
+
+    def ready():
+        if not manifest.is_file():
+            return False
+        data = json.loads(manifest.read_text(encoding='utf-8'))
+        if data.get('info', {}).get('mode') == 'lightweight':
+            raise ValueError('Canonical processed directory contains viewer previews; do not mix with original parquet data')
+        images = data.get('images', [])[:count]
+        return (len(images) == count and 'annotations' in data and bool(data.get('categories'))
+                and all((destination / 'images' / im['file_name']).is_file()
+                        and (destination / 'images' / im['file_name']).stat().st_size > 0 for im in images))
+
+    def merge_local():
+        # Imported datasets may have a complete manifest but only some _shards.
+        # Never discard their other image/annotation records during a repair.
+        merge_split(split, preserve_existing=True)
+
+    if ready():
+        print(f'[ensure] Da co {count} anh + GT: {manifest}. Khong tai lai.')
+        return manifest
+    # Reconstruct an absent/stale merged annotation from existing local records.
+    if list((destination / 'annotations' / '_shards').glob('*.json')):
+        merge_local()
+        if ready():
+            return manifest
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    for _, filename, _ in list_shards(HfApi(), [split]):
+        record = shard_record_path(split, filename)
+        old = json.loads(record.read_text(encoding='utf-8')) if record.exists() else {'images': [], 'complete': False}
+        missing = any(not (destination / 'images' / im['file_name']).is_file()
+                      or (destination / 'images' / im['file_name']).stat().st_size == 0 for im in old['images'])
+        if old.get('complete', True) and not missing:
+            continue
+        remaining = count - extracted_count(split)
+        if remaining <= 0 and not missing:
+            continue
+        limit = max(len(old['images']), len(old['images']) + remaining)
+        local = download_shard(filename)
+        extract_shard(split, filename, local, max_images=None if old.get('complete') else limit)
+        merge_local()
+        if ready():
+            return manifest
+    raise ValueError(f'Khong du {count} anh + GT hoan chinh cho split {split}: {manifest}')
 
 
 def main():
@@ -329,7 +394,15 @@ def main():
     parser.add_argument("--sample-output-dir", type=Path,
                          default=DATASETS_DIR / "doclaynet_sample" / "processed")
     parser.add_argument("--sample-offset", type=int, default=0)
+    parser.add_argument('--ensure', action='store_true',
+                        help='Tai/bo sung anh goc vao datasets/<split>/processed chi khi chua du --max-images')
     args = parser.parse_args()
+
+    if args.ensure:
+        if len(args.splits) != 1 or args.max_images is None or args.max_images < 1 or args.lightweight or args.all or args.no_extract or args.delete_raw:
+            parser.error('--ensure requires one --splits and positive --max-images; no other download modes')
+        ensure_processed_images(args.splits[0], args.max_images)
+        return
 
     if args.lightweight:
         if len(args.splits) != 1 or args.all or args.no_extract:
