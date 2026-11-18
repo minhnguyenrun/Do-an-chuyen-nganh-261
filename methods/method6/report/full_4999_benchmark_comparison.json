@@ -1,0 +1,636 @@
+{
+  "eval_pages": 4999,
+  "base_model": {
+    "model_name": "Base Pretrained RT-DETR",
+    "runtime": {
+      "total_time_sec": 271.73,
+      "fps": 18.4,
+      "ms_per_page": 54.36,
+      "peak_vram_mb": 1985.5,
+      "peak_ram_mb": 1887.0
+    },
+    "coco_map": {
+      "map": 0.5742,
+      "map50": 0.7759,
+      "map75": 0.6099,
+      "map_small": 0.2977,
+      "map_medium": 0.4027,
+      "map_large": 0.6396,
+      "ar1": 0.3007,
+      "ar10": 0.6092,
+      "ar100": 0.6446
+    },
+    "per_category_coco": {
+      "1": {
+        "name": "Caption",
+        "ap": 0.5899,
+        "ap50": 0.7677
+      },
+      "2": {
+        "name": "Footnote",
+        "ap": 0.5748,
+        "ap50": 0.7442
+      },
+      "3": {
+        "name": "Formula",
+        "ap": 0.6127,
+        "ap50": 0.9241
+      },
+      "4": {
+        "name": "List-item",
+        "ap": 0.6922,
+        "ap50": 0.8657
+      },
+      "5": {
+        "name": "Page-footer",
+        "ap": 0.3507,
+        "ap50": 0.8306
+      },
+      "6": {
+        "name": "Page-header",
+        "ap": 0.5234,
+        "ap50": 0.8078
+      },
+      "7": {
+        "name": "Picture",
+        "ap": 0.7521,
+        "ap50": 0.8352
+      },
+      "8": {
+        "name": "Section-header",
+        "ap": 0.4999,
+        "ap50": 0.8576
+      },
+      "9": {
+        "name": "Table",
+        "ap": 0.782,
+        "ap50": 0.826
+      },
+      "10": {
+        "name": "Text",
+        "ap": 0.7496,
+        "ap50": 0.8644
+      },
+      "11": {
+        "name": "Title",
+        "ap": 0.1895,
+        "ap50": 0.2117
+      }
+    },
+    "classification": {
+      "micro": {
+        "precision": 0.4723,
+        "recall": 0.9012,
+        "f1": 0.6198,
+        "mean_iou_matched": 0.88
+      },
+      "macro": {
+        "precision": 0.5175,
+        "recall": 0.8258,
+        "f1": 0.62
+      },
+      "per_category": {
+        "1": {
+          "name": "Caption",
+          "precision": 0.6234,
+          "recall": 0.8069,
+          "f1": 0.7034,
+          "support": 1543,
+          "tp": 1245,
+          "fp": 752,
+          "fn": 298
+        },
+        "2": {
+          "name": "Footnote",
+          "precision": 0.5206,
+          "recall": 0.7829,
+          "f1": 0.6254,
+          "support": 387,
+          "tp": 303,
+          "fp": 279,
+          "fn": 84
+        },
+        "3": {
+          "name": "Formula",
+          "precision": 0.5147,
+          "recall": 0.9634,
+          "f1": 0.6709,
+          "support": 1966,
+          "tp": 1894,
+          "fp": 1786,
+          "fn": 72
+        },
+        "4": {
+          "name": "List-item",
+          "precision": 0.5961,
+          "recall": 0.9072,
+          "f1": 0.7195,
+          "support": 10522,
+          "tp": 9546,
+          "fp": 6468,
+          "fn": 976
+        },
+        "5": {
+          "name": "Page-footer",
+          "precision": 0.4809,
+          "recall": 0.9271,
+          "f1": 0.6333,
+          "support": 3994,
+          "tp": 3703,
+          "fp": 3997,
+          "fn": 291
+        },
+        "6": {
+          "name": "Page-header",
+          "precision": 0.5872,
+          "recall": 0.8669,
+          "f1": 0.7002,
+          "support": 3366,
+          "tp": 2918,
+          "fp": 2051,
+          "fn": 448
+        },
+        "7": {
+          "name": "Picture",
+          "precision": 0.3566,
+          "recall": 0.9375,
+          "f1": 0.5167,
+          "support": 3534,
+          "tp": 3313,
+          "fp": 5977,
+          "fn": 221
+        },
+        "8": {
+          "name": "Section-header",
+          "precision": 0.5412,
+          "recall": 0.9248,
+          "f1": 0.6828,
+          "support": 8550,
+          "tp": 7907,
+          "fp": 6704,
+          "fn": 643
+        },
+        "9": {
+          "name": "Table",
+          "precision": 0.6073,
+          "recall": 0.8525,
+          "f1": 0.7093,
+          "support": 2394,
+          "tp": 2041,
+          "fp": 1320,
+          "fn": 353
+        },
+        "10": {
+          "name": "Text",
+          "precision": 0.4182,
+          "recall": 0.9025,
+          "f1": 0.5716,
+          "support": 29940,
+          "tp": 27020,
+          "fp": 37583,
+          "fn": 2920
+        },
+        "11": {
+          "name": "Title",
+          "precision": 0.4465,
+          "recall": 0.2119,
+          "f1": 0.2874,
+          "support": 335,
+          "tp": 71,
+          "fp": 88,
+          "fn": 264
+        }
+      }
+    },
+    "box_localization": {
+      "precision": 0.5095,
+      "recall": 0.9723,
+      "f1": 0.6686,
+      "mean_iou_matched": 0.8766,
+      "total_gt": 66531,
+      "total_pred": 126966
+    }
+  },
+  "method5_phase1": {
+    "model_name": "Method 5 Phase 1 Best",
+    "runtime": {
+      "total_time_sec": 599.51,
+      "fps": 8.34,
+      "ms_per_page": 119.93,
+      "peak_vram_mb": 2602.5,
+      "peak_ram_mb": 2159.5
+    },
+    "coco_map": {
+      "map": 0.6512,
+      "map50": 0.791,
+      "map75": 0.6985,
+      "map_small": 0.4053,
+      "map_medium": 0.5084,
+      "map_large": 0.6754,
+      "ar1": 0.3428,
+      "ar10": 0.6675,
+      "ar100": 0.7024
+    },
+    "per_category_coco": {
+      "1": {
+        "name": "Caption",
+        "ap": 0.6729,
+        "ap50": 0.7883
+      },
+      "2": {
+        "name": "Footnote",
+        "ap": 0.6844,
+        "ap50": 0.7943
+      },
+      "3": {
+        "name": "Formula",
+        "ap": 0.6372,
+        "ap50": 0.9015
+      },
+      "4": {
+        "name": "List-item",
+        "ap": 0.7606,
+        "ap50": 0.8749
+      },
+      "5": {
+        "name": "Page-footer",
+        "ap": 0.5684,
+        "ap50": 0.8638
+      },
+      "6": {
+        "name": "Page-header",
+        "ap": 0.6411,
+        "ap50": 0.8441
+      },
+      "7": {
+        "name": "Picture",
+        "ap": 0.7445,
+        "ap50": 0.8178
+      },
+      "8": {
+        "name": "Section-header",
+        "ap": 0.6254,
+        "ap50": 0.8549
+      },
+      "9": {
+        "name": "Table",
+        "ap": 0.7955,
+        "ap50": 0.8322
+      },
+      "10": {
+        "name": "Text",
+        "ap": 0.8122,
+        "ap50": 0.8962
+      },
+      "11": {
+        "name": "Title",
+        "ap": 0.2215,
+        "ap50": 0.2328
+      }
+    },
+    "classification": {
+      "micro": {
+        "precision": 0.7908,
+        "recall": 0.8979,
+        "f1": 0.8409,
+        "mean_iou_matched": 0.9153
+      },
+      "macro": {
+        "precision": 0.7917,
+        "recall": 0.824,
+        "f1": 0.7932
+      },
+      "per_category": {
+        "1": {
+          "name": "Caption",
+          "precision": 0.7965,
+          "recall": 0.8166,
+          "f1": 0.8064,
+          "support": 1543,
+          "tp": 1260,
+          "fp": 322,
+          "fn": 283
+        },
+        "2": {
+          "name": "Footnote",
+          "precision": 0.8087,
+          "recall": 0.8191,
+          "f1": 0.8139,
+          "support": 387,
+          "tp": 317,
+          "fp": 75,
+          "fn": 70
+        },
+        "3": {
+          "name": "Formula",
+          "precision": 0.8907,
+          "recall": 0.941,
+          "f1": 0.9152,
+          "support": 1966,
+          "tp": 1850,
+          "fp": 227,
+          "fn": 116
+        },
+        "4": {
+          "name": "List-item",
+          "precision": 0.8314,
+          "recall": 0.9033,
+          "f1": 0.8658,
+          "support": 10522,
+          "tp": 9504,
+          "fp": 1927,
+          "fn": 1018
+        },
+        "5": {
+          "name": "Page-footer",
+          "precision": 0.7634,
+          "recall": 0.9186,
+          "f1": 0.8339,
+          "support": 3994,
+          "tp": 3669,
+          "fp": 1137,
+          "fn": 325
+        },
+        "6": {
+          "name": "Page-header",
+          "precision": 0.8233,
+          "recall": 0.8708,
+          "f1": 0.8464,
+          "support": 3366,
+          "tp": 2931,
+          "fp": 629,
+          "fn": 435
+        },
+        "7": {
+          "name": "Picture",
+          "precision": 0.6528,
+          "recall": 0.8993,
+          "f1": 0.7565,
+          "support": 3534,
+          "tp": 3178,
+          "fp": 1690,
+          "fn": 356
+        },
+        "8": {
+          "name": "Section-header",
+          "precision": 0.8072,
+          "recall": 0.8913,
+          "f1": 0.8472,
+          "support": 8550,
+          "tp": 7621,
+          "fp": 1820,
+          "fn": 929
+        },
+        "9": {
+          "name": "Table",
+          "precision": 0.8258,
+          "recall": 0.8571,
+          "f1": 0.8412,
+          "support": 2394,
+          "tp": 2052,
+          "fp": 433,
+          "fn": 342
+        },
+        "10": {
+          "name": "Text",
+          "precision": 0.7841,
+          "recall": 0.911,
+          "f1": 0.8428,
+          "support": 29940,
+          "tp": 27275,
+          "fp": 7512,
+          "fn": 2665
+        },
+        "11": {
+          "name": "Title",
+          "precision": 0.7248,
+          "recall": 0.2358,
+          "f1": 0.3559,
+          "support": 335,
+          "tp": 79,
+          "fp": 30,
+          "fn": 256
+        }
+      }
+    },
+    "box_localization": {
+      "precision": 0.8378,
+      "recall": 0.9512,
+      "f1": 0.8909,
+      "mean_iou_matched": 0.9123,
+      "total_gt": 66531,
+      "total_pred": 75538
+    }
+  },
+  "method6": {
+    "model_name": "Method 6 (Spatial Sidecar Heatmap RT-DETR)",
+    "runtime": {
+      "total_time_sec": 284.41,
+      "fps": 17.6,
+      "ms_per_page": 56.89,
+      "peak_vram_mb": 1244.3,
+      "peak_ram_mb": 1896.0
+    },
+    "coco_map": {
+      "map": 0.7397,
+      "map50": 0.9012,
+      "map75": 0.8057,
+      "map_small": 0.4689,
+      "map_medium": 0.6556,
+      "map_large": 0.8175,
+      "ar1": 0.3858,
+      "ar10": 0.7428,
+      "ar100": 0.7807
+    },
+    "per_category_coco": {
+      "1": {
+        "name": "Caption",
+        "ap": 0.7993,
+        "ap50": 0.9677
+      },
+      "2": {
+        "name": "Footnote",
+        "ap": 0.7678,
+        "ap50": 0.9044
+      },
+      "3": {
+        "name": "Formula",
+        "ap": 0.4525,
+        "ap50": 0.7301
+      },
+      "4": {
+        "name": "List-item",
+        "ap": 0.8604,
+        "ap50": 0.9869
+      },
+      "5": {
+        "name": "Page-footer",
+        "ap": 0.611,
+        "ap50": 0.9192
+      },
+      "6": {
+        "name": "Page-header",
+        "ap": 0.7281,
+        "ap50": 0.9727
+      },
+      "7": {
+        "name": "Picture",
+        "ap": 0.8814,
+        "ap50": 0.9412
+      },
+      "8": {
+        "name": "Section-header",
+        "ap": 0.7333,
+        "ap50": 0.9735
+      },
+      "9": {
+        "name": "Table",
+        "ap": 0.9637,
+        "ap50": 0.9869
+      },
+      "10": {
+        "name": "Text",
+        "ap": 0.8914,
+        "ap50": 0.9673
+      },
+      "11": {
+        "name": "Title",
+        "ap": 0.4475,
+        "ap50": 0.5631
+      }
+    },
+    "classification": {
+      "micro": {
+        "precision": 0.8358,
+        "recall": 0.9713,
+        "f1": 0.8985,
+        "mean_iou_matched": 0.9175
+      },
+      "macro": {
+        "precision": 0.8388,
+        "recall": 0.9194,
+        "f1": 0.8738
+      },
+      "per_category": {
+        "1": {
+          "name": "Caption",
+          "precision": 0.9543,
+          "recall": 0.9754,
+          "f1": 0.9647,
+          "support": 1543,
+          "tp": 1505,
+          "fp": 72,
+          "fn": 38
+        },
+        "2": {
+          "name": "Footnote",
+          "precision": 0.8747,
+          "recall": 0.9199,
+          "f1": 0.8967,
+          "support": 387,
+          "tp": 356,
+          "fp": 51,
+          "fn": 31
+        },
+        "3": {
+          "name": "Formula",
+          "precision": 0.7542,
+          "recall": 0.8179,
+          "f1": 0.7848,
+          "support": 1966,
+          "tp": 1608,
+          "fp": 524,
+          "fn": 358
+        },
+        "4": {
+          "name": "List-item",
+          "precision": 0.9195,
+          "recall": 0.991,
+          "f1": 0.9539,
+          "support": 10522,
+          "tp": 10427,
+          "fp": 913,
+          "fn": 95
+        },
+        "5": {
+          "name": "Page-footer",
+          "precision": 0.6918,
+          "recall": 0.9404,
+          "f1": 0.7972,
+          "support": 3994,
+          "tp": 3756,
+          "fp": 1673,
+          "fn": 238
+        },
+        "6": {
+          "name": "Page-header",
+          "precision": 0.7955,
+          "recall": 0.9825,
+          "f1": 0.8792,
+          "support": 3366,
+          "tp": 3307,
+          "fp": 850,
+          "fn": 59
+        },
+        "7": {
+          "name": "Picture",
+          "precision": 0.8459,
+          "recall": 0.9508,
+          "f1": 0.8953,
+          "support": 3534,
+          "tp": 3360,
+          "fp": 612,
+          "fn": 174
+        },
+        "8": {
+          "name": "Section-header",
+          "precision": 0.9198,
+          "recall": 0.9832,
+          "f1": 0.9504,
+          "support": 8550,
+          "tp": 8406,
+          "fp": 733,
+          "fn": 144
+        },
+        "9": {
+          "name": "Table",
+          "precision": 0.9009,
+          "recall": 0.9908,
+          "f1": 0.9437,
+          "support": 2394,
+          "tp": 2372,
+          "fp": 261,
+          "fn": 22
+        },
+        "10": {
+          "name": "Text",
+          "precision": 0.8086,
+          "recall": 0.9796,
+          "f1": 0.8859,
+          "support": 29940,
+          "tp": 29328,
+          "fp": 6942,
+          "fn": 612
+        },
+        "11": {
+          "name": "Title",
+          "precision": 0.7617,
+          "recall": 0.5821,
+          "f1": 0.6599,
+          "support": 335,
+          "tp": 195,
+          "fp": 61,
+          "fn": 140
+        }
+      }
+    },
+    "box_localization": {
+      "precision": 0.8456,
+      "recall": 0.9826,
+      "f1": 0.909,
+      "mean_iou_matched": 0.9169,
+      "total_gt": 66531,
+      "total_pred": 77312
+    }
+  }
+}

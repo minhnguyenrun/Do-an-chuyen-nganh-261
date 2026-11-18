@@ -1,0 +1,78 @@
+{
+  "eval_pages": 221,
+  "best_epoch": 3,
+  "base_model": {
+    "name": "docling-project/docling-layout-heron",
+    "map": 0.6302,
+    "map50": 0.8699,
+    "map75": 0.6209
+  },
+  "method5_best": {
+    "weights": "method5_best.pth",
+    "map": 0.7341,
+    "map50": 0.8643,
+    "map75": 0.7917
+  },
+  "improvement": {
+    "delta_map": 0.104,
+    "delta_map50": -0.0056,
+    "delta_map75": 0.1708
+  },
+  "per_category": {
+    "Caption": {
+      "base_ap": 0.8216,
+      "method5_ap": 0.8565,
+      "delta": 0.0349
+    },
+    "Footnote": {
+      "base_ap": 0.3252,
+      "method5_ap": 0.246,
+      "delta": -0.0793
+    },
+    "Formula": {
+      "base_ap": 0.6215,
+      "method5_ap": 0.6869,
+      "delta": 0.0654
+    },
+    "List-item": {
+      "base_ap": 0.7616,
+      "method5_ap": 0.8828,
+      "delta": 0.1212
+    },
+    "Page-footer": {
+      "base_ap": 0.3418,
+      "method5_ap": 0.7474,
+      "delta": 0.4056
+    },
+    "Page-header": {
+      "base_ap": 0.3942,
+      "method5_ap": 0.5959,
+      "delta": 0.2017
+    },
+    "Picture": {
+      "base_ap": 0.9606,
+      "method5_ap": 0.9743,
+      "delta": 0.0137
+    },
+    "Section-header": {
+      "base_ap": 0.4525,
+      "method5_ap": 0.7154,
+      "delta": 0.2629
+    },
+    "Table": {
+      "base_ap": 0.6269,
+      "method5_ap": 0.6235,
+      "delta": -0.0034
+    },
+    "Text": {
+      "base_ap": 0.7966,
+      "method5_ap": 0.8766,
+      "delta": 0.08
+    },
+    "Title": {
+      "base_ap": 0.8291,
+      "method5_ap": 0.8702,
+      "delta": 0.041
+    }
+  }
+}

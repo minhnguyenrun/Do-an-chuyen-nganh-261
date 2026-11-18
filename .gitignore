@@ -1,6 +1,8 @@
 # (a) Dataset chạy local, không push (script tải sẽ tự tạo thư mục)
 datasets/*
 !datasets/README.md
+methods/method9/data/images/
+methods/method9/data/labels/
 
 # Kết quả thô chạy local
 outputs/
@@ -12,6 +14,9 @@ docling_env/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+**/cache/
+*.cache
+*.npy
 
 # Model weights và file nặng
 *.pt
@@ -25,9 +30,10 @@ methods/m2doc/mmdetection/
 **/mmdet/.mim/
 **/mmdetection/demo/*.ipynb
 
-# Ảnh trực quan hóa local
+# Ảnh trực quan hóa local & training runs
 visualization/figures/
 runs/
+**/runs/
 **/train_runs/
 
 # Bí mật và rác hệ điều hành

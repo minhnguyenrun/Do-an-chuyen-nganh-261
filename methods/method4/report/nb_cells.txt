@@ -1,0 +1,117 @@
+=== CELL 0 (markdown) ===
+# BÁO CÁO TOÀN DIỆN VÀ ĐỐI CHUẨN: BOOK-LAYOUT RT-DETR
+## Cross-Page Layout Semantic Fusion vs Base RT-DETRv2
+
+Notebook này báo cáo chi tiết về phương pháp mới **Book-Layout RT-DETR**: Sử dụng cơ chế hòa trộn đa phương thức (Multimodal Fusion) tương tự Fusion OCR nhưng thay vì hòa trộn Text Tokens, mô hình hòa trộn **Vector Ngữ Nghĩa Bố Cục Toàn Cuốn Sách ($E_{\text{book}}$)** vào các Object Queries của **RT-DETRv2**.
+
+Toàn bộ chỉ số đánh giá được tính toán bằng **code chuẩn dùng chung của dự án (`src.common.metrics`)** bao gồm:
+- **Strict Metrics**: Yêu cầu khớp cả tọa độ ($IoU \ge 0.5$) và đúng nhãn class.
+- **Loose Metrics**: Đánh giá khả năng định vị (Localization-only / Class-agnostic).
+- **COCO mAP & AR**: $mAP@[.50:.95]$, $AP_{50}$, $AP_{75}$.
+- **Class-level Breakdown**: So sánh chi tiết Precision, Recall, F1-score trên từng nhãn.
+
+=== CELL 1 (code) ===
+import sys
+import json
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+
+# Thiết lập đường dẫn dự án
+ROOT_DIR = Path.cwd().resolve()
+while not (ROOT_DIR / "datasets").exists() and ROOT_DIR.parent != ROOT_DIR:
+    ROOT_DIR = ROOT_DIR.parent
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+METHOD_DIR = ROOT_DIR / "methods" / "method_rtdetr_fusion"
+REPORT_DIR = METHOD_DIR / "report"
+print(f"Workspace Root: {ROOT_DIR}")
+print(f"Report Directory: {REPORT_DIR}")
+
+=== CELL 2 (markdown) ===
+## 1. Lịch Sử Huấn Luyện (Training & Validation Progress)
+Theo dõi tiến trình hội tụ của hàm mất mát (`Train Loss`, `Val Loss`, `Cls Loss`, `Box Loss`) qua từng epoch với kỹ thuật **Automatic Mixed Precision (AMP FP16)**.
+
+=== CELL 3 (code) ===
+csv_path = REPORT_DIR / "training_history.csv"
+if csv_path.exists():
+    df_history = pd.read_csv(csv_path)
+    display(df_history.style.highlight_min(subset=["train_loss", "val_loss"], color="#d4edda")\
+                           .highlight_max(subset=["val_acc"], color="#cce5ff"))
+else:
+    print("Chưa tìm thấy training_history.csv")
+
+=== CELL 4 (code) ===
+plot_path = REPORT_DIR / "training_report.png"
+if plot_path.exists():
+    img = Image.open(plot_path)
+    plt.figure(figsize=(16, 5))
+    plt.imshow(img)
+    plt.axis("off")
+    plt.title("Tiến trình Huấn luyện Book-Layout RT-DETR (Loss & Validation)", fontsize=14, fontweight="bold", pad=15)
+    plt.show()
+else:
+    print("Chưa có biểu đồ training_report.png")
+
+=== CELL 5 (markdown) ===
+## 2. Báo Cáo Đánh Giá Chung Bằng Code Chuẩn (`src.common.metrics`)
+Đánh giá độc lập trên tập kiểm thử DocLayNet, so sánh trực tiếp giữa **Base RT-DETR** và **Book-Layout RT-DETR (Semantic Fusion)**.
+
+=== CELL 6 (code) ===
+# Đọc kết quả benchmark chi tiết
+bench_json = REPORT_DIR / "benchmark_comparison.json"
+if bench_json.exists():
+    with open(bench_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    df_classes = pd.DataFrame(data["classes"])
+    
+    # Tính độ chênh lệch delta F1
+    df_classes["delta_f1"] = (df_classes["fusion_f1"] - df_classes["base_f1"]) * 100
+    
+    # Hiển thị bảng dạng phần trăm đẹp mắt
+    display_df = df_classes.copy()
+    for col in ["base_precision", "base_recall", "base_f1", "fusion_precision", "fusion_recall", "fusion_f1"]:
+        display_df[col] = (display_df[col] * 100).round(2).astype(str) + "%"
+    display_df["delta_f1"] = display_df["delta_f1"].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
+    
+    print("=== BẢNG SO SÁNH TRÊN TỪNG CLASS (CLASS-LEVEL BREAKDOWN) ===")
+    display(display_df.style.set_properties(**{'text-align': 'center'}))
+else:
+    print("Chưa có benchmark_comparison.json")
+
+=== CELL 7 (markdown) ===
+## 3. Biểu Đồ Đối Chuẩn Trực Quan: Cải Thiện Vượt Trội Nhờ Ngữ Cảnh Sách
+Vẽ biểu đồ cột trực quan thể hiện rõ các class hưởng lợi mạnh nhất từ việc hòa trộn ngữ nghĩa toàn cuốn sách $E_{\text{book}}$.
+
+=== CELL 8 (code) ===
+if bench_json.exists():
+    # Lọc các class có xuất hiện trong tập đánh giá
+    active_classes = df_classes[(df_classes["base_f1"] > 0) | (df_classes["fusion_f1"] > 0)]
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    x = range(len(active_classes))
+    width = 0.35
+    
+    ax.bar([i - width/2 for i in x], active_classes["base_f1"] * 100, width, label="Base RT-DETR", color="#4a90e2", alpha=0.9)
+    ax.bar([i + width/2 for i in x], active_classes["fusion_f1"] * 100, width, label="Book-Layout RT-DETR (Fusion)", color="#50e3c2", alpha=0.9)
+    
+    ax.set_ylabel("F1-Score (%)", fontsize=12, fontweight="bold")
+    ax.set_title("So sánh F1-Score: Base RT-DETR vs Book-Layout RT-DETR", fontsize=14, fontweight="bold", pad=15)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(active_classes["class"], rotation=30, ha="right", fontsize=11)
+    ax.legend(fontsize=12)
+    ax.grid(axis="y", linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+=== CELL 9 (markdown) ===
+## 4. Kết Luận Khoa Học & Đóng Góp Của Mô Hình
+1. **Bản chất của Cross-Page Semantic Fusion**: Thay vì nạp OCR chữ tốn kém tài nguyên, mô hình trích xuất bố cục không gian và phân bố nhãn của chuỗi các trang liên tiếp để tạo ra vector đặc trưng $E_{\text{book}}$.
+2. **Cải thiện độ nhạy và độ chính xác**:
+   - **`List-item` (F1 tăng từ 26.17% lên 74.78%, +48.61%)**: Ngữ cảnh cuốn sách giúp mô hình nắm bắt được nhịp điệu thụt lề và đánh số danh sách qua các trang liên tiếp.
+   - **`Caption` (Precision tăng từ 55.65% lên 77.97%, +22.32%)**: Phân biệt chuẩn xác giữa đoạn chú thích ảnh với đoạn văn bản thông thường.
+3. **Hiệu năng & Tối ưu phần cứng**: Mô hình đạt tốc độ suy luận Real-Time (~77ms/2 trang) và mức tiêu thụ VRAM chỉ ~3.2 GB, cực kỳ phù hợp cho môi trường Edge Device và GPU Laptop.

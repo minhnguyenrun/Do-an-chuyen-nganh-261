@@ -1,0 +1,88 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Caption",
+      "base_ap": 0.4446,
+      "method5_ap": 0.4354,
+      "delta_ap_pct": -0.92
+    },
+    {
+      "id": 2,
+      "name": "Footnote",
+      "base_ap": -1.0,
+      "method5_ap": -1.0,
+      "delta_ap_pct": 0.0
+    },
+    {
+      "id": 3,
+      "name": "Formula",
+      "base_ap": -1.0,
+      "method5_ap": -1.0,
+      "delta_ap_pct": 0.0
+    },
+    {
+      "id": 4,
+      "name": "List-item",
+      "base_ap": 0.5958,
+      "method5_ap": 0.6154,
+      "delta_ap_pct": 1.96
+    },
+    {
+      "id": 5,
+      "name": "Page-footer",
+      "base_ap": 0.5221,
+      "method5_ap": 0.536,
+      "delta_ap_pct": 1.4
+    },
+    {
+      "id": 6,
+      "name": "Page-header",
+      "base_ap": 0.3559,
+      "method5_ap": 0.3476,
+      "delta_ap_pct": -0.83
+    },
+    {
+      "id": 7,
+      "name": "Picture",
+      "base_ap": 0.4868,
+      "method5_ap": 0.4899,
+      "delta_ap_pct": 0.31
+    },
+    {
+      "id": 8,
+      "name": "Section-header",
+      "base_ap": 0.5327,
+      "method5_ap": 0.5355,
+      "delta_ap_pct": 0.28
+    },
+    {
+      "id": 9,
+      "name": "Table",
+      "base_ap": 0.8172,
+      "method5_ap": 0.8172,
+      "delta_ap_pct": 0.0
+    },
+    {
+      "id": 10,
+      "name": "Text",
+      "base_ap": 0.5943,
+      "method5_ap": 0.5953,
+      "delta_ap_pct": 0.1
+    },
+    {
+      "id": 11,
+      "name": "Title",
+      "base_ap": 0.4,
+      "method5_ap": 0.4,
+      "delta_ap_pct": 0.0
+    }
+  ],
+  "overall": {
+    "base_map": 0.5277,
+    "base_map50": 0.7458,
+    "method5_map": 0.5302,
+    "method5_map50": 0.747,
+    "delta_map_pct": 0.26
+  }
+}
