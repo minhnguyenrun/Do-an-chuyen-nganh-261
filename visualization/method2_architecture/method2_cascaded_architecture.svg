@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1480" viewBox="0 0 2200 1480"><rect width="2200" height="1480" fill="white"/>
+<text x='65' y='69' font-family='Arial,sans-serif' font-size='39' font-weight='bold' fill='#243247'>METHOD 2  |  Cascaded Document Layout Analysis</text>
+<text x='65' y='111' font-family='Arial,sans-serif' font-size='25' font-weight='normal' fill='#243247'>Current implementation: v2.1  /  Two independent variants with a shared downstream architecture</text>
+<rect x='65' y='155' width='310' height='180' fill='#F6F7F9' stroke='#9AA7B7' stroke-width='2'/>
+<text x='85' y='197' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>Input document page</text>
+<text x='85' y='235' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Original page pixels</text>
+<text x='85' y='266' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Width W, height H</text>
+<rect x='465' y='155' width='500' height='180' fill='#EAF1FA' stroke='#7595BC' stroke-width='2'/>
+<text x='485' y='197' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>(a) Pipeline S</text>
+<text x='485' y='235' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>PP-DocLayout-S</text>
+<text x='485' y='266' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Region boxes, labels, detector scores</text>
+<rect x='1065' y='155' width='500' height='180' fill='#EAF1FA' stroke='#7595BC' stroke-width='2'/>
+<text x='1085' y='197' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>(b) Pipeline V3</text>
+<text x='1085' y='235' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>PP-DocLayoutV3</text>
+<text x='1085' y='266' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Region boxes, labels, detector scores</text>
+<line x1='375' y1='205' x2='465' y2='205' stroke='#536478' stroke-width='2.5' /><polygon points='465,205 451,211 451,199' fill='#536478'/>
+<line x1='375' y1='295' x2='420' y2='295' stroke='#536478' stroke-width='2.5' /><polygon points='420,295 406,301 406,289' fill='#536478'/>
+<line x1='420' y1='295' x2='420' y2='125' stroke='#536478' stroke-width='2.5' /><polygon points='420,125 426,139 414,139' fill='#536478'/>
+<line x1='420' y1='125' x2='1315' y2='125' stroke='#536478' stroke-width='2.5' /><polygon points='1315,125 1301,131 1301,119' fill='#536478'/>
+<line x1='1315' y1='125' x2='1315' y2='155' stroke='#536478' stroke-width='2.5' /><polygon points='1315,155 1309,141 1321,141' fill='#536478'/>
+<text x='1640' y='198' font-family='Arial,sans-serif' font-size='24' font-weight='bold' fill='#243247'>VARIANT SELECTION</text>
+<text x='1640' y='240' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Run S or V3 independently.</text>
+<text x='1640' y='274' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>S and V3 outputs are not fused.</text>
+<rect x='65' y='405' width='530' height='190' fill='#EDF6F3' stroke='#83A99D' stroke-width='2'/>
+<text x='85' y='447' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>OCR evidence</text>
+<text x='85' y='485' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>PP-OCRv5 mobile_det + mobile_rec</text>
+<text x='85' y='516' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Line polygons, transcripts, rec_score</text>
+<text x='85' y='547' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Trusted recognition: rec_score &gt;= 0.75</text>
+<rect x='65' y='665' width='530' height='190' fill='#F6F1E8' stroke='#B39C77' stroke-width='2'/>
+<text x='85' y='707' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>Auxiliary layout detector</text>
+<text x='85' y='745' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>DocLayout-YOLO / DocStructBench</text>
+<text x='85' y='776' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Full page, imgsz = 1024, score &gt;= 0.10</text>
+<text x='85' y='807' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Small boxes: area &lt;= 2%, height &lt;= 8%</text>
+<line x1='220' y1='335' x2='220' y2='405' stroke='#536478' stroke-width='2.5' /><polygon points='220,405 214,391 226,391' fill='#536478'/>
+<line x1='65' y1='335' x2='35' y2='335' stroke='#536478' stroke-width='2.5' /><polygon points='35,335 49,329 49,341' fill='#536478'/>
+<line x1='35' y1='335' x2='35' y2='760' stroke='#536478' stroke-width='2.5' /><polygon points='35,760 29,746 41,746' fill='#536478'/>
+<line x1='35' y1='760' x2='65' y2='760' stroke='#536478' stroke-width='2.5' /><polygon points='65,760 51,766 51,754' fill='#536478'/>
+<rect x='710' y='405' width='850' height='190' fill='#EAF1FA' stroke='#7595BC' stroke-width='2'/>
+<text x='730' y='447' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>1  |  Baseline-preserving fusion</text>
+<text x='730' y='485' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>PP baseline: detector score &gt;= 0.45</text>
+<text x='730' y='516' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Normalize labels; test overlap and parent-child relations</text>
+<text x='730' y='547' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Add verified YOLO regions; retain PP conflict fallback</text>
+<line x1='715' y1='335' x2='935' y2='405' stroke='#536478' stroke-width='2.5' /><polygon points='935,405 919.839817136153,406.472703478202 923.478261023476,395.037594118043' fill='#536478'/>
+<line x1='1315' y1='335' x2='1315' y2='405' stroke='#536478' stroke-width='2.5' /><polygon points='1315,405 1309,391 1321,391' fill='#536478'/>
+<line x1='595' y1='490' x2='710' y2='490' stroke='#536478' stroke-width='2.5' stroke-dasharray='9 6'/><polygon points='710,490 696,496 696,484' fill='#536478'/>
+<line x1='595' y1='760' x2='650' y2='760' stroke='#536478' stroke-width='2.5' /><polygon points='650,760 636,766 636,754' fill='#536478'/>
+<line x1='650' y1='760' x2='650' y2='555' stroke='#536478' stroke-width='2.5' /><polygon points='650,555 656,569 644,569' fill='#536478'/>
+<line x1='650' y1='555' x2='710' y2='555' stroke='#536478' stroke-width='2.5' /><polygon points='710,555 696,561 696,549' fill='#536478'/>
+<rect x='710' y='665' width='850' height='190' fill='#EDF6F3' stroke='#83A99D' stroke-width='2'/>
+<text x='730' y='707' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>2  |  OCR-guided recovery and target gating</text>
+<text x='730' y='745' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Recover weak proposals; extend compatible Text/List regions</text>
+<text x='730' y='776' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Line polygon coverage &gt;= 0.80; semantic score &gt;= 0.60</text>
+<text x='730' y='807' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Targets: true conflicts and unresolved OCR line groups</text>
+<line x1='1135' y1='595' x2='1135' y2='665' stroke='#536478' stroke-width='2.5' /><polygon points='1135,665 1129,651 1141,651' fill='#536478'/>
+<line x1='595' y1='570' x2='620' y2='570' stroke='#536478' stroke-width='2.5' stroke-dasharray='9 6'/><polygon points='620,570 606,576 606,564' fill='#536478'/>
+<line x1='620' y1='570' x2='620' y2='695' stroke='#536478' stroke-width='2.5' stroke-dasharray='9 6'/><polygon points='620,695 614,681 626,681' fill='#536478'/>
+<line x1='620' y1='695' x2='710' y2='695' stroke='#536478' stroke-width='2.5' stroke-dasharray='9 6'/><polygon points='710,695 696,701 696,689' fill='#536478'/>
+<rect x='1640' y='665' width='500' height='190' fill='#F2EDF8' stroke='#A38BB8' stroke-width='2'/>
+<text x='1660' y='707' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>3  |  Selective VLM inference</text>
+<text x='1660' y='745' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>MinerU2.5-2509-1.2B</text>
+<text x='1660' y='776' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Official layout_detect on context crops</text>
+<text x='1660' y='807' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>&lt;= 8 crops/page; edge &lt;= 768 px</text>
+<text x='1660' y='838' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Batch = 1; &lt;= 512 tokens/crop</text>
+<line x1='1560' y1='760' x2='1640' y2='760' stroke='#536478' stroke-width='2.5' /><polygon points='1640,760 1626,766 1626,754' fill='#536478'/>
+<rect x='710' y='940' width='1430' height='190' fill='#F2EDF8' stroke='#A38BB8' stroke-width='2'/>
+<text x='730' y='982' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>4  |  OCR-line attribution and constrained selection (v2.1)</text>
+<text x='730' y='1020' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Map crop boxes to page coordinates; assign target lines; protect neighboring regions</text>
+<text x='730' y='1051' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Reject foreign-line contamination; select a valid partition; preserve fallback lines</text>
+<text x='730' y='1082' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Q = 0.45 Coverage - 0.30 SplitPenalty + 0.25 Semantic; require Q(new) &gt; Q(KEEP) + 0.10</text>
+<line x1='1890' y1='855' x2='1890' y2='940' stroke='#536478' stroke-width='2.5' /><polygon points='1890,940 1884,926 1896,926' fill='#536478'/>
+<line x1='1135' y1='855' x2='1135' y2='940' stroke='#536478' stroke-width='2.5' stroke-dasharray='9 6'/><polygon points='1135,940 1129,926 1141,926' fill='#536478'/>
+<text x='1160' y='901' font-family='Arial,sans-serif' font-size='22' font-weight='normal' fill='#243247'>KEEP candidate + fixed OCR ownership</text>
+<rect x='710' y='1205' width='650' height='145' fill='#EDF6F3' stroke='#83A99D' stroke-width='2'/>
+<text x='730' y='1247' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>Accepted update</text>
+<text x='730' y='1285' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>ADD / REPLACE / ABSORB</text>
+<text x='730' y='1316' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Final regions: bbox, label, lineage</text>
+<rect x='1450' y='1205' width='690' height='145' fill='#F6F1E8' stroke='#B39C77' stroke-width='2'/>
+<text x='1470' y='1247' font-family='Arial,sans-serif' font-size='27' font-weight='bold' fill='#243247'>Fallback / review</text>
+<text x='1470' y='1285' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>KEEP baseline on rejection, error or budget limit</text>
+<text x='1470' y='1316' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Record proposals, decisions and review evidence</text>
+<line x1='1035' y1='1130' x2='1035' y2='1205' stroke='#536478' stroke-width='2.5' /><polygon points='1035,1205 1029,1191 1041,1191' fill='#536478'/>
+<line x1='1795' y1='1130' x2='1795' y2='1205' stroke='#536478' stroke-width='2.5' /><polygon points='1795,1205 1789,1191 1801,1191' fill='#536478'/>
+<text x='65' y='994' font-family='Arial,sans-serif' font-size='24' font-weight='bold' fill='#243247'>OUTPUT-LEVEL CASCADE</text>
+<text x='65' y='1038' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Independent pretrained models.</text>
+<text x='65' y='1073' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>Rule-based geometric and</text>
+<text x='65' y='1108' font-family='Arial,sans-serif' font-size='23' font-weight='normal' fill='#243247'>OCR-semantic verification.</text>
+<text x='65' y='1162' font-family='Arial,sans-serif' font-size='22' font-weight='normal' fill='#243247'>Solid: prediction / control flow</text>
+<text x='65' y='1197' font-family='Arial,sans-serif' font-size='22' font-weight='normal' fill='#243247'>Dashed: evidence / fallback flow</text>
+<text x='65' y='1415' font-family='Arial,sans-serif' font-size='25' font-weight='bold' fill='#243247'>Execution schedule: Paddle (layout + OCR) -&gt; release -&gt; YOLO -&gt; release -&gt; selective MinerU + final decision</text>
+<text x='65' y='1452' font-family='Arial,sans-serif' font-size='22' font-weight='normal' fill='#243247'>The shared stages are instantiated separately for S and V3. WBF is disabled by default. Layout-only output; no shared-backbone training.</text>
+</svg>

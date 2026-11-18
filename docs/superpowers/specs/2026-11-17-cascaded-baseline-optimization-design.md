@@ -1,0 +1,65 @@
+# Đề xuất tối ưu runtime Cascaded Layout bằng giới hạn chất lượng
+
+Ngày 2026-11-17. Trạng thái: bản đề xuất để review và người dùng duyệt, chưa phải quyết định triển khai. Phạm vi nhỏ, chỉ tối ưu các lượt gọi MinerU không thể thay baseline theo chính luật Q hiện tại. Chưa implement tối ưu production hoặc đo optimized latency. Sau khảo sát, subagent test độc lập đã chạy kiểm tra eligibility/replay CPU trên baseline lưu; kết quả được ghi riêng bên dưới.
+
+## Mục tiêu và bối cảnh
+
+Đồ án so sánh Document Layout Analysis trên DocLayNet. Cải thiện đề xuất là giảm chi phí suy luận mà giữ nguyên final detections trên cùng input và cùng raw output các lượt MinerU còn lại. Không hứa tăng F1; không chọn/tune bằng test. README gốc dành valid để chọn tham số và test chỉ báo cáo cuối.
+
+Đã đọc tài liệu gốc docs/superpowers/plans/Tối Ưu Hóa Cascaded Layout.docx, các docs cascaded trong method2 và mã nguồn. Không tìm thấy AGENTS.md trong repo; agent điều phối kiểm tra ancestors riêng. Tài liệu DOCX đề xuất giảm gọi MinerU, chỉnh hình học và thay backend, nhưng nhiều nhận định mutual-drop/unknown-final cùng F1 67.86→49.72% là snapshot v1. Runner hiện dùng fusion.prepare_layout và attribution.finish_layout v2.1 (runner.py:11-12). Giữ PP fallback, generic-title compatible, dominance, WBF tùy chọn và review tách final đã tồn tại trong fusion.py:13-176; không triển khai lại các sửa v1 đó.
+
+## Baseline có provenance
+
+Hai run v2.1 đã lưu thực tế có 20 ảnh valid giống nhau, 226 GT, literal taxonomy. Chúng mới hơn mô tả smoke-only trong docs. Source SHA256 của cả run và mã hiện tại đều cc54410437545d8fc7e24d632f64a37c11184b64d2b5ed53624777fb82e5be75. Giai đoạn khảo sát chỉ đọc JSON và tính hash; sau đó subagent test độc lập chạy kiểm tra eligibility/replay CPU, không thêm suy luận model.
+
+| Biến thể | PP F1@0.50 | Recovery F1@0.50 | Final F1@0.50 | Final F1@0.75 | Crop calls | Median/P95 giây mỗi trang |
+|---|---:|---:|---:|---:|---:|---:|
+| S | 52.7919% | 52.5253% | 52.3929% | 40.8060% | 71 | 20.8243 / 35.3740 |
+| V3 | 56.0570% | 59.3607% | 59.2255% | 47.8360% | 81 | 59.6098 / 195.2775 |
+
+Nguồn: method2/outputs/cascaded_layout/s/real/v2.1/75ac93d5d258/report_literal/metrics.json và nhánh v3/real/v2.1/b4aa156a1a43 tương ứng. Không dùng timing historical v2 thay thế timing này. Mỗi run có một MinerU ADD ở image_17, generic title vẫn Unmapped trong literal nên thêm một FP strict; không thấy REPLACE được chấp nhận. Tổng conflict targets S/V3 là21/32, số conflict có lượt gọi thực là15/23, cộng thời gian các crop conflict102.1883/520.5721s. Đây là toàn bộ tập chi phí conflict. Eligibility đã được subagent test độc lập kiểm tra cụ thể bên dưới; không phải mọi conflict đều đủ proof.
+
+## Kiểm chứng eligibility từ subagent test độc lập
+
+Subagent test đã chạy đường tính conservative exact-domain thành công trên cả40 trang S/V3. Source hash hiện tại khớp cache; prepare targets và final detections đối chiếu bằng baseline đạt40/40 trang. Domain Qkeep dùng target IDs hợp mọi keep.line_ids, lọc theo lines gốc; điều kiện đủ đang kiểm tra là threshold Python thực tế Qkeep+gain > .70+1e-12. Đây là kiểm tra thuật toán bằng dữ liệu lưu, chưa phải implementation runtime mới hoặc benchmark tốc độ tối ưu.
+
+| Biến thể | Tổng targets | Calls baseline | Tokens baseline | Calls đủ proof bỏ | Tokens thuộc calls đủ proof | Tổng crop seconds lịch sử thuộc calls đủ proof |
+|---|---:|---:|---:|---:|---:|---:|
+| S | 84 | 71 | 7774 | 3 | 572 | 22.0023 |
+| V3 | 112 | 81 | 7868 | 8 | 933 | 190.5565 |
+
+Các crop seconds trên là chi phí lịch sử trong baseline có thể tránh theo projection khi giữ cùng chính sách target/budget. Không được gọi chúng là measured avoided latency hoặc trừ trực tiếp khỏi median/P95 để công bố end-to-end latency mới. Kiểm chứng hiện tại củng cố khả năng pruning có ích trên cache này; triển khai default-off, kiểm thử integration/report và đo real paired run vẫn chưa hoàn thành.
+
+## Các hướng đã cân nhắc
+
+1. **Giới hạn Q trước MinerU, đề xuất ưu tiên.** Chứng minh một số true_conflict không thể vượt KEEP, giữ nguyên chính sách và detections, giảm lượt gọi. Dễ đối chiếu bằng replay; chỉ cải thiện runtime, vẫn giữ các hạn chế accuracy hiện tại. Đây là đề xuất mới suy ra từ code, phù hợp mục tiêu giảm gọi MinerU trong DOCX nhưng không phải thuật toán đã được tác giả DOCX định sẵn.
+2. **Shrink/refit bbox bằng polygon OCR, hướng từ DOCX.** Có cơ sở thực: V3 image_3 target0 box0 phủ core line172=.96136 nhưng chỉ chạm line171=.04333; attribution.py:113-124 loại mọi candidate có một touched line không normal/snap. Có thể co mép loại chạm nhẹ mà giữ core. Tuy nhiên target REPLACE vẫn cần đủ mọi dòng; hiện chưa chứng minh tăng F1, và smoke image_0 là hai mảnh cùng một line chứ không có core để giữ. Cần replay, log trước/sau và duy trì frozen ownership, semantic, nontext, Q, rollback; không sửa bằng cách đơn giản bỏ qua intersection nhỏ vì có thể che cắt dòng thật.
+3. **Sửa công thức hoặc margin Q để mở đường REPLACE.** Có khả năng sửa accuracy, nhưng thay tiêu chuẩn nhận layout và rủi ro FP; cần thiết kế thang điểm, calibration, valid rộng hơn. Không ghép cùng thay đổi tối ưu runtime để tránh không biết nguyên nhân delta.
+
+Model2Vec/LightGBM, order/mask V3, full-page pass và llama.cpp là các hướng lớn trong DOCX, chưa đủ căn cứ cho đợt nhỏ này. Không coi 7–12x hoặc F1 68–72% trong DOCX là kết quả. README chính thức mineru-vl-utils mô tả MinerULogitsProcessor để hỗ trợ no_repeat_ngram_size, không phải grammar whitelist; không áp dụng giả định đó trong đề xuất: https://github.com/opendatalab/mineru-vl-utils#serving-the-model-optional .
+
+## Thiết kế đề xuất
+
+Giữ quality hiện tại tại fusion.py:179-198: Q=.45 coverage-.30 split+.25 semantic. coverage∈[0,1], split≥0 và semantic∈[0,1] theo semantic_gate.py:10-56, nên Q≤.70. Attribution.py:298 nhận chỉ khi Qnew > Qkeep + min_replace_gain (strict lớn hơn, không phải ≥); Config đặt margin tối thiểu .10 (types.py:33,59-60). Nếu Qkeep đã ≥.60, không có proposal hợp lệ nào thắng theo số học thực. Không hard-code kết luận chỉ từ semantic: phải dùng đúng quality baseline thực tế để tính Qkeep vì baseline có thể có split penalty.
+
+Thêm helper tính upper bound bảo thủ dùng chung với nơi định nghĩa Q, chỉ áp dụng cho true_conflict có fallback baseline và target_lines không rỗng. True conflict không được ABSORB vì candidate_boxes chặn nhánh neighbor khi fallback tồn tại (attribution.py:163). Do đó Qkeep ở preflight không phụ thuộc candidate hoặc neighbor, nhưng phải tái tạo đúng domain và thứ tự của evaluate trong attribution.py:209-215: base=keep; evaluation_ids=set(target line IDs) hợp tất cả line IDs thuộc keep; evaluation_lines=[l for l in lines if l.id in evaluation_ids]. Giữ nguyên thứ tự lines gốc, không chỉ dùng target_lines hoặc thứ tự IDs, vì semantic/page features và số học tích lũy phải đồng nhất với bước nhận cuối. Tính Qkeep bằng cùng quality và dùng đúng biểu thức threshold Python Qkeep+cfg.min_replace_gain như comparator cuối. Không skip orphan/ADD/ABSORB. Kiểm tra finite và miền hợp lệ của mọi tham số ảnh hưởng proof, geometry, line IDs/ownership và Qkeep/threshold; kể cả Config hiện chưa chặn hết NaN, custom/malformed input phải fail open bằng cách gọi model như cũ khi không đủ chứng minh. Line.__post_init__ hiện chỉ kiểm tra scores, chưa xác thực polygon. Do đó preflight phải chủ động fail open với polygon không hợp lệ, diện tích bằng0 hoặc tọa độ không hữu hạn; bbox/score không hữu hạn hoặc không hợp lệ; IDs/ownership không nhất quán; và mọi exception khi dựng hình học/tính quality/proof. Không được chỉ kiểm tra Qkeep hữu hạn rồi coi input là có thể chứng minh. Exception ở preflight dẫn về đường gọi model/hậu xử lý cũ, không tạo quyết định skip. Không sửa validation config toàn hệ thống trong scope này. Dùng upper bound bảo thủ có khoảng bảo vệ floating point, chẳng hạn chỉ skip khi threshold Python vượt .70 ít nhất 1e-12; điểm biên sát bằng vẫn gọi như cũ. Builder có thể chọn bound lớn hơn một chút với chứng minh tương đương và test. Không cần thay threshold chấp nhận để đạt tối ưu.
+
+Đặt preflight trong runner.py:164-192 sau các gate disabled/no-lines/budget và trước crop/model initialize/predict. Chỉ tính trên fallback snapshot của target từ state recovery; không đọc GT. Số slot ngân sách logic phải giữ như baseline: một lượt được skip vẫn chiếm slot trong max_crops. Tách budget_slots khỏi actual_calls hoặc tên tương đương. Nếu bỏ slot sẽ cho target orphan về cuối được gọi thêm, làm mất cam kết final không đổi. Không đổi thứ tự target hay cấp budget lại trong đợt này.
+
+Skip tạo evidence trạng thái riêng quality_bound_skip cùng Qkeep, upper_bound, required threshold và lý do; không giả tạo output model, token hoặc confidence. finish_layout phải có nhánh xử lý skip tường minh trước nhánh status khác ok hiện tại (attribution.py:273-274), giữ fallback và ghi KEEP với checkpoint chất lượng riêng. Không để nhánh generic tự ghép thành MODEL_QUALITY_BOUND_SKIP; skip không phải MODEL_ERROR hoặc MODEL_BUDGET_EXHAUSTED. Review và decisions được phép khác vì audit phản ánh lý do mới; final detections, lineage/geometry/confidence và unresolved-line accounting phải như baseline khi các lượt còn lại trả cùng raw response. MinerU hiện chưa cấu hình sampling determinism tường minh: skip có thể đổi trạng thái RNG trước lượt còn lại, nên cam kết equality là có điều kiện trên cùng raw responses, kiểm bằng replay/fake adapter; live paired run phải báo nondeterminism riêng, không hứa bitwise equality. Giữ nguyên target selection và slot thứ tự là điều kiện cần nhưng chưa đủ để đảm bảo cùng sampled responses. Các trường timing/calls/tokens phản ánh thực tế gọi và tách logical slots. Bật qua config explicit; mặc định giữ hành vi cũ cho tới khi kiểm chứng và người dùng chọn bật. Không thay checkpoint model, tokenizer, crop, sampling, backend hay dependencies.
+
+Mã dự kiến chạm: method2/src/cascaded/fusion.py (helper proof cạnh quality), runner.py (preflight), attribution.py (evidence skip), types.py (flag), report.py bắt buộc sửa summary calls/skip: bộ đếm hiện ở report.py:152 có thể coi status mới là VLM call nếu chỉ loại vài status cũ. Actual calls phải nhận diện lượt predict thật, không đếm quality_bound_skip; tokens và budget slots phải phân biệt rõ. Chỉ sửa CLI/notebook builder nếu cần đưa flag tới người chạy. Source hash và config vốn nằm trong signature/cache; run mới phải thư mục/hash mới, không viết đè raw baseline. Vì v2.1 source hash kiểm tra cả module, replay cần đọc raw cache như fixture qua đường riêng có provenance, không ép cache cũ thành cache mới hợp lệ.
+
+## Bất biến và tiêu chí đánh giá
+
+- Không xóa/thay/sửa PP baseline do skip; final detections cùng input/raw outputs phải bằng baseline từng ảnh.
+- Không dùng GT để quyết định skip; valid dùng để đánh giá, không đổi test hoặc literal taxonomy.
+- Không giải phóng slot budget hoặc gọi thêm target cuối trang; orphan/model failure/disabled/no-lines vẫn giữ hành vi. Giữ nguyên selection, thứ tự và evaluation domain/order; live sampling có thể thay RNG nên equality chỉ cam kết khi các raw responses còn lại giống nhau.
+- Skip phải có proof số hữu hạn và không vượt bound Q trên đúng domain và phép tính Python của final comparator; NaN/inf, margin/config hoặc custom/malformed input không hỗ trợ thì fail open bằng cách gọi model.
+- Chỉ báo cáo giảm calls và thời gian inference khi đã đo; số giây crop baseline bị loại trong replay là estimated avoided cost, không phải measured new end-to-end latency.
+
+Verification do subagent test độc lập: unit property cho Q bound, strict comparator và floating-point boundary; integration fake adapter xác nhận không initialize MinerU khi toàn bộ eligible là skip, vẫn consume budget; orphan vẫn được gọi; failed preflight hoặc NaN/inf/malformed custom input gọi như cũ, gồm polygon invalid/zero-area/nonfinite, bbox/score nonfinite và exception geometry/quality; skip có checkpoint riêng không bị prefix MODEL_; evaluation_lines/domain/order và threshold khớp comparator cuối; final/line accounting bằng nhau khi dùng cùng raw responses; report actual_calls không đếm skip và logical slots vẫn đúng. Replay paired cả20 valid S/V3 từ hai run nêu trên, giữ cùng ảnh/GT/config/taxonomy; so final JSON, TP/FP/FN/F1@.50/.75/per-class, decision reason, eligible/actual/skipped/budget slots và tokens. Inference timings từ replay không thay thế real timing. Sau replay đạt yêu cầu mới chạy paired warm real subset với thứ tự/seeds/cấu hình cố định, báo load riêng, median/P95/wall/VRAM và sai số nondeterminism. Không bật mặc định nếu chỉ có mock hoặc chưa đo được lợi ích; nếu không target nào đủ proof, báo no improvement trung thực và giữ default cũ.
+
+## Quyết định còn chờ
+
+Đề xuất cho người dùng chọn hướng1 như một thử nghiệm tối ưu latency giữ nguyên luật nhận layout. Agent chính chỉ điều phối; agent implementation và agent test tách riêng. Chưa có phê duyệt design hoặc triển khai production, chưa commit trong khảo sát này. Subagent test đã thực hiện kiểm tra eligibility/replay CPU nêu trên; kiểm thử implementation tối ưu chỉ thực hiện sau khi design được duyệt.
