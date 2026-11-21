@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from transformers import RTDetrV2ForObjectDetection
 
 from methods.method8.models.spatial_sidecar_cnn import SpatialLayoutSidecarCNN
-from methods.method5.models.class_weighted_loss import ClassWeightedRTDetrLoss, compute_class_weighted_rtdetr_loss
+from methods.method8.models.class_weighted_loss import ClassWeightedRTDetrLoss, compute_class_weighted_rtdetr_loss
 
 
 class SpatialSidecarRTDetrMethod8(nn.Module):
